@@ -30,7 +30,10 @@ if(-not $supported -and -not (Test-Path -LiteralPath (Join-Path $nodeDestination
  $line=$checksums -split "`n" | Where-Object {$_.Trim().EndsWith($name)} | Select-Object -First 1
  if(-not $line){throw 'Official Node.js checksum is missing.'}
  $expected=($line.Trim() -split '\s+')[0]
- if((Get-FileHash -LiteralPath $nodeZip -Algorithm SHA256).Hash -ne $expected){throw 'Node.js checksum verification failed.'}
+ $hashAlgorithm=[Security.Cryptography.SHA256]::Create()
+ $hashStream=[IO.File]::OpenRead($nodeZip)
+ try{$actual=[BitConverter]::ToString($hashAlgorithm.ComputeHash($hashStream)).Replace('-','')}finally{$hashStream.Dispose();$hashAlgorithm.Dispose()}
+ if($actual -ne $expected){throw 'Node.js checksum verification failed.'}
  Expand-Archive -LiteralPath $nodeZip -DestinationPath $stageRoot -Force
  $nodeSource=Join-Path $stageRoot ('node-'+$release.version+'-win-x64')
  New-Item -ItemType Directory -Path $nodeDestination -Force | Out-Null
