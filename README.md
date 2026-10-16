@@ -12,7 +12,7 @@ irm https://raw.githubusercontent.com/wa0966766851-ship-it/dsh-web-launcher/main
 
 也可以把本專案的 `Install.cmd` 傳給朋友，雙擊即可執行同一個 GitHub 安裝流程。這個入口沒有綁定作者的電腦路徑或帳號。
 
-安裝器會從 GitHub 下載本專案。缺少相容 Node.js 時，從 nodejs.org 下載 Node.js 24 並核對官方 SHA256；只放在使用者目錄。接著檢查或安裝 DSH、三個插件，建立桌面「DSH 啟動台」捷徑及 BAT 後備入口，啟動同一份 web profile。
+安裝器會從 GitHub 下載本專案。缺少相容 Node.js 時，從 nodejs.org 下載 Node.js 24 並核對官方 SHA256；只放在使用者目錄。接著檢查或安裝 DSH、插件管理所需的 pnpm、三個插件，建立桌面「DSH 啟動台」捷徑及 BAT 後備入口，啟動同一份 web profile。首次下載相依套件可能需要數分鐘。
 
 需要連線下載，沒有提供完整離線安裝。通常不需管理員權限。朋友應在自己的 Windows 帳號執行，帳號登入、Google 驗證、API Key 由本人在 DSH 設定完成；程式沒有攜帶作者的設定或憑證。
 

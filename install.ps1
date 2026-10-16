@@ -33,9 +33,14 @@ $cli=Join-Path $InstallPrefix 'node_modules\@deepseek-ai\dsh\lib\bin.js'
 $existingConfigFile=Join-Path $PSScriptRoot 'launcher.config.json'
 if(Test-Path -LiteralPath $existingConfigFile){$savedConfig=Get-Content -LiteralPath $existingConfigFile -Raw | ConvertFrom-Json;if($savedConfig.cliPath -and (Test-Path -LiteralPath $savedConfig.cliPath) -and -not $PSBoundParameters.ContainsKey('InstallPrefix')){$cli=$savedConfig.cliPath}}
 Say "[1/5] Node.js $nodeVersion; checking DSH..."
-if(-not (Test-Path -LiteralPath $cli)){Run-Checked $nodeExe @($npmCli,'install','--global','--prefix',$InstallPrefix,'@deepseek-ai/dsh@0.2.0-rc.2')}else{Say 'Existing DSH found; keeping its version and settings.'}
+if(-not (Test-Path -LiteralPath $cli)){Run-Checked $nodeExe @($npmCli,'install','--global','--prefix',$InstallPrefix,'--allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs','@deepseek-ai/dsh@0.2.0-rc.2')}else{Say 'Existing DSH found; keeping its version and settings.'}
 if(-not (Test-Path -LiteralPath $cli)){throw 'DSH CLI is missing after installation.'}
 Run-Checked $nodeExe @($cli,'--version')
+if(-not (Get-Command pnpm.cmd -ErrorAction SilentlyContinue)){
+ Say 'Installing pnpm for the DSH plugin manager...'
+ Run-Checked $nodeExe @($npmCli,'install','--global','--prefix',$InstallPrefix,'pnpm@11.25.0')
+}
+if(-not (Get-Command pnpm.cmd -ErrorAction SilentlyContinue)){throw 'pnpm is missing after installation.'}
 $config=if(Test-Path -LiteralPath $existingConfigFile){Get-Content -LiteralPath $existingConfigFile -Raw | ConvertFrom-Json}else{[pscustomobject]@{port=$Port;mode='app';theme='light'}}
 $config | Add-Member -MemberType NoteProperty -Name cliPath -Value $cli -Force
 if(-not $PSBoundParameters.ContainsKey('Port') -and $config.port){$Port=[int]$config.port}
