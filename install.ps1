@@ -38,6 +38,7 @@ if(-not (Test-Path -LiteralPath $cli)){throw 'DSH CLI is missing after installat
 Run-Checked $nodeExe @($cli,'--version')
 $config=if(Test-Path -LiteralPath $existingConfigFile){Get-Content -LiteralPath $existingConfigFile -Raw | ConvertFrom-Json}else{[pscustomobject]@{port=$Port;mode='app';theme='light'}}
 $config | Add-Member -MemberType NoteProperty -Name cliPath -Value $cli -Force
+if(-not $PSBoundParameters.ContainsKey('Port') -and $config.port){$Port=[int]$config.port}
 [IO.File]::WriteAllText($existingConfigFile,($config | ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
 $plugins=@(
  @{Name='dsh-our-free-model';Spec='dsh-our-free-model@2.1.0'},

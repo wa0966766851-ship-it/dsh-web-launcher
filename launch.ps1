@@ -8,7 +8,9 @@ if($nodeCommand){$nodeCandidates += $nodeCommand.Source}
 $nodeCandidates += (Join-Path $env:ProgramFiles 'nodejs\node.exe')
 $nodeExe=$nodeCandidates | Where-Object {Test-Path -LiteralPath $_} | Select-Object -First 1
 if(-not $nodeExe){throw 'Node.js is missing. Run the GitHub bootstrap command first.'}
-$arguments=@((Join-Path $PSScriptRoot 'control.mjs'),$Action,'--port',$Port,'--mode',$Mode)
+$arguments=@((Join-Path $PSScriptRoot 'control.mjs'),$Action)
+if($PSBoundParameters.ContainsKey('Port')){$arguments+=@('--port',[string]$Port)}
+if($PSBoundParameters.ContainsKey('Mode')){$arguments+=@('--mode',$Mode)}
 if($NoOpen){$arguments+='--no-open'}
 & $nodeExe @arguments
 if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
