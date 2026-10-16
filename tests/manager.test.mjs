@@ -1,0 +1,16 @@
+import {test,after} from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'dsh-launcher-tests-'));
+process.env.DSH_HOME=temp;
+const m=await import('../manager.mjs');
+after(()=>fs.rmSync(temp,{recursive:true,force:true}));
+test('strict URL scan handles CRLF, LAN suffix, exact port and newest first',()=>{const text='dsh web: http://127.0.0.1:3080/?token=old\r\ndsh web: http://127.0.0.1:3081/?token=other\ndsh web: http://127.0.0.1:3080/?token=new (LAN: http://192.168.1.1:3080/?token=new)\r\n';assert.deepEqual(m.parseUrls(text,3080),['http://127.0.0.1:3080/?token=new','http://127.0.0.1:3080/?token=old']);});
+test('auth verification requires the token exchange cookie and authenticated HTML',async()=>{const s=http.createServer((req,res)=>{const u=new URL(req.url,'http://localhost');if(u.searchParams.get('token')==='good'){res.writeHead(303,{'set-cookie':'dsh=accepted; HttpOnly',location:'./'});res.end();}else if(req.headers.cookie==='dsh=accepted'){res.end('<!doctype html><html>DSH</html>');}else if(u.searchParams.get('token')==='fake'){res.end('<html>unrelated website</html>');}else{res.writeHead(401);res.end();}});await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;try{assert.equal(await m.validateUrl(`http://127.0.0.1:${p}/?token=good`,p),true);assert.equal(await m.validateUrl(`http://127.0.0.1:${p}/?token=bad`,p),false);assert.equal(await m.validateUrl(`http://127.0.0.1:${p}/?token=fake`,p),false);assert.equal(await m.validateUrl(`http://127.0.0.1:${p}/?token=good`,p+1),false);}finally{s.closeAllConnections();await new Promise(r=>s.close(r));}});
+test('ambiguous node processes are not classified as DSH',()=>{assert.equal(m.isDsh({Name:'node.exe',CommandLine:'node C:/my-dsh-project/bin.js'}),false);assert.equal(m.isDsh({Name:'electron.exe',CommandLine:'node @deepseek-ai/dsh/lib/bin.js web'}),false);assert.equal(m.isDsh({Name:'node.exe',CommandLine:'node "C:\\Users\\test\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js" web'}),true);assert.equal(m.isDsh({Name:'node.exe'}),false);});
+test('concurrent operations serialize and failed operations release the lock',async()=>{const order=[];await Promise.all([m.withLock('test',async()=>{order.push(1);await new Promise(r=>setTimeout(r,100));order.push(2);}),m.withLock('test',async()=>order.push(3))]);assert.deepEqual(order,[1,2,3]);await assert.rejects(m.withLock('test',async()=>{throw Error('failure');}));await m.withLock('test',async()=>order.push(4));assert.equal(order.at(-1),4);});
+test('logs redact bearer-like secrets and token URLs',()=>{assert.equal(m.redact('dsh web: http://127.0.0.1:3080/?token=secret'),'dsh web: http://127.0.0.1:3080/?token=[隱藏]');});
+test('stop refuses a foreign listener and leaves it alive',async()=>{const s=http.createServer((req,res)=>res.end('foreign survives'));await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;try{await assert.rejects(m.stop(p),/其他程式/);const r=await fetch(`http://127.0.0.1:${p}/`);assert.equal(await r.text(),'foreign survives');}finally{s.closeAllConnections();await new Promise(r=>s.close(r));}});

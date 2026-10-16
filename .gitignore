@@ -1,0 +1,7 @@
+runtime/
+launcher.config.json
+node_modules/
+*.log
+*.zip
+*.tgz
+.test-home/
