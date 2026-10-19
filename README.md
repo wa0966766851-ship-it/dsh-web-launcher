@@ -58,3 +58,11 @@ irm https://raw.githubusercontent.com/wa0966766851-ship-it/dsh-web-launcher/main
 `npm test` 驗證網址解析、認證交換、非 DSH 服務保護、併發啟動互斥等。發布前另做隔離 profile 安裝與本機服務啟停驗收。模型聊天、Google 驗證和付費 API 不屬於安裝驗收；請在自己的帳號設定後測試。
 
 若重新執行 GitHub 指令，會備份舊程式並重試缺少的元件。修改既有來源碼者請先自行保留其變更。
+
+---
+
+## patched-plugin/
+
+`patched-plugin/` 收錄 **Our Free Model 2.5.5 的本地補丁版**：補回上游缺少的
+Google 帳號驗證按鈕、WorkBuddy 獨立登入視窗，並加上廣告開關與升級後自動重套的守護者。
+詳見 [patched-plugin/README.md](patched-plugin/README.md)。
