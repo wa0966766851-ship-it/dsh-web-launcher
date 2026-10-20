@@ -1,4 +1,4 @@
-﻿param([switch]$NoOpen,[switch]$SkipStart,[switch]$SkipShortcuts,[switch]$IncludeOps,[int]$Port=3080,[string]$InstallPrefix)
+param([switch]$NoOpen,[switch]$SkipStart,[switch]$SkipShortcuts,[switch]$IncludeOps,[int]$Port=3080,[string]$InstallPrefix)
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
@@ -46,7 +46,7 @@ $config | Add-Member -MemberType NoteProperty -Name cliPath -Value $cli -Force
 if(-not $PSBoundParameters.ContainsKey('Port') -and $config.port){$Port=[int]$config.port}
 [IO.File]::WriteAllText($existingConfigFile,($config | ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
 $plugins=@(
- @{Name='dsh-our-free-model';Spec='dsh-our-free-model@2.1.0'},
+ @{Name='dsh-our-free-model';Spec='dsh-our-free-model@2.5.7'},
  @{Name='dsh-orb';Spec='dsh-orb@0.1.7'},
  @{Name='gal-view';Spec='https://codeload.github.com/Ayase34/gal-view/tar.gz/d002fe0e7051c618a2665af3c653f9838cd6aa8a'}
 )
@@ -72,3 +72,4 @@ if(-not $SkipShortcuts){& (Join-Path $PSScriptRoot 'shortcuts.ps1')}
 if(-not $SkipStart){Say '[5/5] Starting the web profile...';$action=if($changed){'restart'}else{'start'};Run-Checked $nodeExe @((Join-Path $PSScriptRoot 'control.mjs'),$action,'--port',[string]$Port,'--no-open')}
 Say 'Ready. Accounts and API keys must be configured by the owner in the DSH settings.'
 if(-not $NoOpen){Run-Checked $nodeExe @((Join-Path $PSScriptRoot 'control.mjs'),'ui')}
+

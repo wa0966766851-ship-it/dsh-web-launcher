@@ -1,90 +1,48 @@
-# DSH Our Free Model — 本地補丁版 (2.5.5)
+# 本地補丁版 Our Free Model (2.5.7 patched)
 
-這是 [Our Free Model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 插件的**本地補丁版**，
-由 `wa0966766851-ship-it` 維護，用來補回上游缺少的功能。
+基於上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) `main`（2.5.7）。
 
-> 上游版本：**2.5.5**　補丁套用日期：2026-10-19
+## 補丁內容（全部冪等，可重複套用）
 
----
+| 補丁 | 檔案 | 說明 |
+| --- | --- | --- |
+| Google 帳號驗證按鈕 | client.js + vendor/channel-pack/pack.js | 403 `VALIDATION_REQUIRED` 的 quota 回應帶有 `validation_url`，解析後在帳號列顯示「完成 Google 帳號驗證」按鈕 |
+| WorkBuddy 獨立登入視窗 | src/isolated-login.js + index.js + client.js | 「新增其他 Google 帳號」按鈕，經主程序開獨立 Edge 視窗登入，不干擾既有帳號 |
+| 拒絕時自動展開帳號清單 | client.js | 偵測到需要驗證的帳號時自動展開清單，按鈕直接在畫面上 |
+| **贊助橫幅隱藏開關** | client.js | 2.5.6+ 改為嵌在免費模型/EAC 頁面頂部的 `SponsorBanner`；本補丁把它 gate 在 `localStorage['ofm.hide-ads']`（預設隱藏） |
+| 本地補丁頁面 | client.js | 新增「本地補丁」分頁：廣告開關 + 補丁狀態自檢（4 項） |
 
-## 這個版本多了什麼
+## 升級後重新套用
 
-### 1. Google 帳號驗證按鈕
-上游在 `VALIDATION_REQUIRED` 時只把錯誤字串丟到帳號列，沒有提供任何操作入口。
-
-本版補回：
-- `pack.js` 解析 403 回應裡的 `validation_url`（含安全校驗：必須 `https`、host 必須是 `accounts.google.com`、不得含帳密）
-- 該 URL 經 `extra` 傳到前端
-- **在該帳號那一行**顯示「完成 Google 帳號驗證」按鈕
-- 偵測到被拒絕時**自動展開帳號列表**，按鈕直接現身——不必自己翻找是哪個帳號
-
-### 2. WorkBuddy 獨立登入視窗
-上游移除了 `src/isolated-login.js` 整個模組與 `/channels/login/isolated` 路由，
-導致無法「新增其他 Google 帳號」。
-
-本版還原該模組與路由，並在 WorkBuddy 卡片加上「新增其他 Google 帳號」按鈕。
-獨立視窗使用一次性 Edge profile，**不會干擾既有已登入帳號**。
-
-### 3. 廣告控制
-上游內建每日贊助商彈窗與「贊助商」分頁。
-
-本版預設**隱藏**兩者，並在設定頁新增「本地補丁」分頁：
-- 廣告開關（即時生效）
-- 補丁狀態自檢（三個燈號）
-
-要恢復廣告：把 localStorage `ofm.hide-ads` 設為 `'0'`，或用該頁的開關。
-
----
-
-## 升級後補丁會消失 — 已自動處理
-
-插件的內建升級器會覆蓋所有檔案，並**刪除不在新清單裡的檔案**
-（`src/isolated-login.js` 就是這樣消失的）。所以每次升級補丁都會沒。
-
-本版附帶 **`patch-assets/ofm-patch-guard.mjs`** 守護者：
+每次插件升級都會覆蓋補丁。守護任務（`ofm-patch-guard.mjs`，每 10 分鐘）會自動補上；手動：
 
 ```powershell
-node patch-assets\ofm-patch-guard.mjs --install   # 註冊 Windows 排程（每 10 分鐘）
-node patch-assets\ofm-patch-guard.mjs --status    # 看狀態
-node patch-assets\ofm-patch-guard.mjs --remove    # 移除排程
+node patch-assets\reapply-ofm-patches.mjs --pkg <插件目錄>
 ```
 
-守護者偵測到補丁被覆蓋會**自動重套**。安全設計：
-- 每分鐘最多一次（鎖檔）
-- 升級進行中直接跳過
-- 錨點對不上時**拒絕寫入任何檔案**，不會寫壞
-- 成敗都寫日誌：`~/.dsh/our-free-model/patch-guard.log`
+守護任務安裝/狀態：
 
-### 手動重套
 ```powershell
-node patch-assets\reapply-ofm-patches.mjs --pkg "%USERPROFILE%\dsh-our-free-model"
+node patch-assets\ofm-patch-guard.mjs --install   # 註冊排程（每 10 分鐘）
+node patch-assets\ofm-patch-guard.mjs --status    # 自檢
 ```
 
-24 步、錨點式（不依賴行號）、冪等（重複跑安全）。
+## 給朋友的指令（在 DSH 對話框貼上）
 
----
-
-## 安裝方式
-
-把本 repo 的內容覆蓋到插件目錄：
+**安裝/升級 Our Free Model 到 2.5.7 並自動套用本地補丁：**
 
 ```
-%USERPROFILE%\dsh-our-free-model\
+請幫我安裝或升級 Our Free Model 插件到 2.5.7，並套用本地補丁：
+1. 關閉正在執行的 DSH Web 服務（若 3080 被佔用，確認是 DSH 的 node 程序後停止它）。
+2. 執行：npx --yes dsh-our-free-model@latest 不存在；改用 dsh plugin --profile web add dsh-our-free-model@2.5.7
+3. 安裝完成後執行補丁腳本：node <launcher 目錄>\patched-plugin\patch-assets\reapply-ofm-patches.mjs --pkg <插件 node_modules 位置>
+4. 重新啟動 DSH Web，確認設定 → Our Free Model 出現「本地補丁」分頁且 4 項狀態為「已套用」。
 ```
 
-然後在 DSH：設定 → Our Free Model → 插件升級 → 按「热重载插件」，再按 F5。
+## 給朋友的行內指令（PowerShell 一行）
 
-建議同時註冊守護者，避免下次升級又被覆蓋。
+```powershell
+irm https://raw.githubusercontent.com/wa0966766851-ship-it/dsh-web-launcher/main/bootstrap.ps1 | iex
+```
 
----
-
-## 已知的上游問題（非本補丁造成）
-
-`scripts/client-lint.mjs` 在 2.5.x 會失敗：原版 `client.js` 就 `require('react-dom')`，
-但 lint 規則只允許 `react`。已用未補丁的原檔重現同樣錯誤。
-
----
-
-## 授權
-
-上游為 MIT，本補丁版沿用。原始版權屬 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 作者。
+這會安裝啟動台（含 2.5.7 patched 插件安裝流程），自動偵測既有安裝，不會重複安裝。

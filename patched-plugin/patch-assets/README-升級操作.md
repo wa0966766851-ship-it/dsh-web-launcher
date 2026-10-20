@@ -1,61 +1,21 @@
-﻿# Our Free Model — 本地補丁（2.5.5，含自動守護）
+# 升級操作（維護者用）
 
-## 現在不會再「升級就不見」了
-有一個 Windows 排程 **OFM-PatchGuard**，每 10 分鐘檢查一次：
-補丁被升級覆蓋掉 → 自動重套 → `autoReloadWatch` 開著時插件自己熱重載。
+## 基底升級流程（2.5.5 -> 2.5.7 已完成，此為未來版本範本）
 
-你不需要做任何事。想手動確認：
-```
-node "%USERPROFILE%\.dsh\our-free-model\patch-assets\ofm-patch-guard.mjs" --status
-```
+1. 下載上游 main zip，解壓到暫存目錄。
+2. `node patch-assets/reapply-ofm-patches.mjs --dry-run --pkg <上游解壓目錄>` — 22 項錨點全部通過才繼續；有 ANCHOR PROBLEMS 就停，先修錨點。
+3. 備份舊 `patched-plugin` -> `patched-plugin-<舊版>-backup-<時間戳>`。
+4. 上游解壓目錄取代 `patched-plugin/`，`patch-assets/` 與 `src/isolated-login.js` 從備份複製回來。
+5. `node patch-assets/reapply-ofm-patches.mjs --pkg <patched-plugin>` 實際套用。
+6. `node $env:TEMP\ofm-verify.mjs` 15 項特徵驗證（0 fail 才算成功）。
+7. `install.ps1` 內的 Spec 版本號同步更新。
+8. 同步兩個本機位置：`~/.dsh/profiles/web/node_modules/dsh-our-free-model` 與 `~/dsh-our-free-model`。
+9. `ofm-patch-guard.mjs` 的 snapshot/healthy() 若上游改了特徵（例如 2.5.7 移除 sponsor tab、新增 SponsorBanner），同步更新。
+10. commit + push 前跑 `npm test`（tests/manager.test.mjs 不含插件測試，僅核心邏輯）。
 
-### 守護者的指令
-| 指令 | 作用 |
-|---|---|
-| （無參數） | 檢查一次，需要時重套 |
-| `--status` | 只看狀態，不改任何檔案 |
-| `--install` | 註冊排程（已做過） |
-| `--remove` | 移除排程 |
+## 2.5.7 的錨點變化記錄
 
-日誌：`~/.dsh/our-free-model/patch-guard.log`
-上次結果：`~/.dsh/our-free-model/patch-guard-state.json`
-
-守護者的安全設計：
-- 每分鐘最多跑一次（鎖檔），不會空轉
-- 升級進行中（`installing`/`activating`）直接跳過，不干擾
-- 補丁腳本只要有一個錨點對不上就**拒絕寫入任何檔案**，不會寫壞
-- 修好會寫日誌；失敗也寫日誌並保留 `patch-guard-state.json` 供診斷
-
-## 補丁內容（24 步）
-### 帳號驗證
-- `pack.js` 解析 403 `VALIDATION_REQUIRED` 的 `validation_url`
-- 經 `extra` 傳到前端，在**該帳號那一行**顯示「完成 Google 帳號驗證」
-- 偵測到被拒絕時**自動展開帳號列表**，按鈕直接現身（指名是哪個帳號）
-
-### WorkBuddy 獨立登入
-- 還原 `src/isolated-login.js`（升級會刪）
-- `index.js` 加 `/channels/login/isolated` 路由
-- `client.js` 加「新增其他 Google 帳號」按鈕與 modal 控制項
-- 2.5.5 改寫了 `startLogin`，補丁改為**分流**而非整段替換
-
-### 廣告控制（新）
-- 內建每日贊助商彈窗與「贊助商」分頁，預設**已隱藏**
-- 設定頁新增 **「本地補丁」** 分頁：
-  - 廣告開關（即時生效）
-  - 補丁狀態自檢（三個燈號）
-- 想恢復廣告：把 localStorage `ofm.hide-ads` 設成 `'0'`，或直接用該頁的開關
-
-## 檔案
-- `ofm-patch-guard.mjs`     守護者（排程呼叫這個）
-- `reapply-ofm-patches.mjs` 實際補丁腳本（24 步，錨點式，冪等）
-- `isolated-login.js`       WorkBuddy 模組備份
-- `*.patched`               早期版本備份，僅供比對
-
-## 手動重套（守護者失效時）
-```
-node "%USERPROFILE%\.dsh\our-free-model\patch-assets\reapply-ofm-patches.mjs"
-```
-
-## 已知上游問題
-`scripts/client-lint.mjs` 在 2.5.x 會失敗：原版 `client.js` 就 `require('react-dom')`，
-但 lint 規則只允許 `react`。已用未補丁原檔重現，與本補丁無關。
+- `pack.js` 的 `CALL_OLD` 需要 14 個前導空格的縮排。
+- sponsor tab/每日彈窗被上游移除，改為 `SponsorBanner` 元件嵌在 free/eac 兩頁；補丁改為 gate 兩處呼叫。
+- `hideAds` helper 錨點改為 `SPONSOR_CARD_URL` const 行。
+- 頁面路由 `tab === 'picks'` 的縮排從 24 空格改為 20 空格。

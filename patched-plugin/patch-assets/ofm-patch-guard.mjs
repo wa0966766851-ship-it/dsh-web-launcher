@@ -63,10 +63,11 @@ function snapshot() {
     parse: pack.includes('validation_url'),
     ads: client.includes('ofm.hide-ads'),
     page: client.includes('function LocalPatchPage'),
+    banner: (client.match(/hideAds\(\) \? null : h\(SponsorBanner/g) || []).length === 2,
   };
 }
 function healthy(s) {
-  return s.verify && s.isolated && s.route && s.parse && s.ads && s.page;
+  return s.verify && s.isolated && s.route && s.parse && s.ads && s.page && s.banner;
 }
 
 if (has('--status')) {
@@ -152,3 +153,4 @@ if (ok) {
 
 note('reapply FAILED — anchors no longer match upstream. Details in patch-guard-state.json');
 process.exit(1);
+

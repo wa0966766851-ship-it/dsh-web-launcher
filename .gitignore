@@ -5,3 +5,13 @@ node_modules/
 *.zip
 *.tgz
 .test-home/
+patched-plugin-*-backup-*/
+patched-plugin/packages/
+patched-plugin/.github/
+patched-plugin/vendor/channel-pack/src/
+patched-plugin/scripts/
+patched-plugin/catalog/
+patched-plugin/feed/
+patched-plugin/docs/
+patched-plugin/tests/
+patched-plugin/vendor/
