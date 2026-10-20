@@ -20,6 +20,12 @@
 node patch-assets\reapply-ofm-patches.mjs --pkg <插件目錄>
 ```
 
+守護任務是選用功能，已安裝者的完整修補與控制台更新：
+
+```powershell
+irm https://raw.githubusercontent.com/wa0966766851-ship-it/dsh-web-launcher/main/patch.ps1 | iex
+```
+
 守護任務安裝/狀態：
 
 ```powershell
@@ -34,7 +40,7 @@ node patch-assets\ofm-patch-guard.mjs --status    # 自檢
 ```
 請幫我安裝或升級 Our Free Model 插件到 2.5.7，並套用本地補丁：
 1. 關閉正在執行的 DSH Web 服務（若 3080 被佔用，確認是 DSH 的 node 程序後停止它）。
-2. 執行：npx --yes dsh-our-free-model@latest 不存在；改用 dsh plugin --profile web add dsh-our-free-model@2.5.7
+2. 2.5.7 尚未發布到 npm；使用本專案完整安裝器會從已固定的上游 GitHub commit 安裝，請勿要求 npm 安裝不存在的版本。
 3. 安裝完成後執行補丁腳本：node <launcher 目錄>\patched-plugin\patch-assets\reapply-ofm-patches.mjs --pkg <插件 node_modules 位置>
 4. 重新啟動 DSH Web，確認設定 → Our Free Model 出現「本地補丁」分頁且 4 項狀態為「已套用」。
 ```

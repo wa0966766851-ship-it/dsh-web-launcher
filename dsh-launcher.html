@@ -178,6 +178,20 @@
           </div>
         </div>
 
+        <div class="panel">
+          <div class="panel-title">外掛與補丁</div>
+          <div class="row"><span class="row-label">Our Free Model</span><span class="check-value" id="pOfm">—</span></div>
+          <div class="row"><span class="row-label">補丁狀態</span><span class="check-value" id="pPatch">—</span></div>
+          <div class="row"><span class="row-label">廣告橫幅</span><span class="check-value" id="pAds">—</span></div>
+          <div class="quick" style="grid-template-columns:1fr 1fr">
+            <button id="btnOfmUpgrade">檢查安裝並修復</button>
+            <button id="btnPatches">修復補丁並重啟</button>
+            <button id="btnGuardInstall">安裝守護任務</button>
+            <button id="btnGuardStatus">補丁自檢</button>
+          </div>
+          <div class="notes" id="patchNotes"></div>
+        </div>
+
         <div class="panel log-panel">
           <div class="log-head">
             <div class="panel-title" style="margin:0">即時日誌</div>
@@ -228,7 +242,7 @@ async function api(path, opts) {
 let busy = false;
 function setBusy(v, label) {
   busy = v;
-  for (const id of ['btnStart','btnStop','btnRestart']) $(id).disabled = v;
+  for (const id of ['btnStart','btnStop','btnRestart','btnOfmUpgrade','btnPatches','btnGuardInstall','btnGuardStatus']) $(id).disabled = v;
   $('led').className = 'led ' + (v ? 'busy' : '');
   if (v) $('statusText').textContent = label || '處理中…';
 }
@@ -268,7 +282,7 @@ function render(state) {
 
   if(document.activeElement!==$('portInput')) $('portInput').value = state.port;
   $('btnInstall').disabled=Boolean(state.busy);
-  for(const id of ['btnStart','btnStop','btnRestart']) $(id).disabled=busy||Boolean(state.busy);
+  for(const id of ['btnStart','btnStop','btnRestart','btnOfmUpgrade','btnPatches','btnGuardInstall','btnGuardStatus']) $(id).disabled=busy||Boolean(state.busy);
   if(state.setup?.error) setNotes(state.setup.error);
   for (const d of $('modeSeg').children) d.classList.toggle('active', d.dataset.mode === state.mode);
   document.documentElement.dataset.theme = state.theme || 'light';
@@ -358,12 +372,57 @@ $('themeBtn').onclick = async () => {
   await api('/api/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ theme: next }) });
 };
 
+// ─── 外掛與補丁管理 ─────────────────────────────────────────────
+async function refreshPatches() {
+  try {
+    const r = await api('/api/patch/status');
+    if (!r.ok) return;
+    const s = r.patch;
+    $('pOfm').textContent = s.version || '未安裝';
+    const flags = [['syntax', '前端語法'], ['verify', '驗證鈕'], ['isolated', '獨立登入'], ['route','登入路由'], ['parse','驗證資訊'], ['autoexpand', '自動展開'], ['banner', '橫幅開關'], ['page', '補丁頁']];
+    const missing = flags.filter(([k]) => !s[k]);
+    $('pPatch').innerHTML = missing.length === 0
+      ? '<span class="ok-v">全部已套用</span>'
+      : '<span class="err-v">缺 ' + missing.map(([,n]) => n).join('、') + '</span>';
+    $('pAds').textContent = s.banner ? '可在插件「本地補丁」頁切換' : '補丁未套用';
+    if(s.syntaxError)setPatchNotes('前端無法載入：'+s.syntaxError);
+  } catch(e) { $('pPatch').textContent='狀態讀取失敗';setPatchNotes(e.message); }
+}
+
+function setPatchNotes(t) { $('patchNotes').textContent = t || ''; }
+
+async function patchAct(label, fn) {
+  setBusy(true, label);
+  setPatchNotes('');
+  try {
+    const r = await fn();
+    const note=r.started?'背景處理中，完成結果會顯示於即時日誌。':(r.note||'完成');
+    setPatchNotes(r.ok === false ? (r.error || '操作失敗') : note);
+    appendLog({ t: Date.now(), line: '[補丁] ' + label + '：' + (r.ok === false ? (r.error || '失敗') : note) });
+  } catch (e) { setPatchNotes('發生錯誤：' + e.message); }
+  finally { setBusy(false); await refresh(); await refreshPatches(); }
+}
+
+$('btnOfmUpgrade').onclick = () => patchAct('升級 Our Free Model', () =>
+  api('/api/patch/upgrade', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }));
+
+$('btnPatches').onclick = () => patchAct('重新套用補丁', () =>
+  api('/api/patch/reapply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }));
+
+$('btnGuardInstall').onclick = () => patchAct('安裝守護任務', () =>
+  api('/api/patch/guard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'install' }) }));
+
+$('btnGuardStatus').onclick = () => patchAct('補丁自檢', () =>
+  api('/api/patch/guard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'status' }) }));
+
 (async () => {
   await refresh();
   const r = await api('/api/log');
   if (r.ok) { logBody.innerHTML = ''; for (const l of r.lines) appendLog(l); }
   connectEvents();
   setInterval(() => { if (!busy) refresh(); }, 3000);
+  await refreshPatches();
+  setInterval(() => { if (!busy) refreshPatches(); }, 10000);
 })();
 </script>
 </body>

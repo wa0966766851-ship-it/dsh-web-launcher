@@ -46,7 +46,6 @@ $config | Add-Member -MemberType NoteProperty -Name cliPath -Value $cli -Force
 if(-not $PSBoundParameters.ContainsKey('Port') -and $config.port){$Port=[int]$config.port}
 [IO.File]::WriteAllText($existingConfigFile,($config | ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
 $plugins=@(
- @{Name='dsh-our-free-model';Spec='dsh-our-free-model@2.5.7'},
  @{Name='dsh-orb';Spec='dsh-orb@0.1.7'},
  @{Name='gal-view';Spec='https://codeload.github.com/Ayase34/gal-view/tar.gz/d002fe0e7051c618a2665af3c653f9838cd6aa8a'}
 )
@@ -62,6 +61,27 @@ foreach($plugin in $plugins){
  if(@($profile.dsh.profile.bundles) -notcontains $plugin.Name){throw ('Bundle was not enabled: '+$plugin.Name)}
  $changed=$true
 }
+# The upstream GitHub release is newer than its npm publication. Pin verified sources.
+$ofmName='dsh-our-free-model'
+$ofmInstalled=Join-Path $profileDir ('node_modules\'+$ofmName)
+$ofmSpec='https://codeload.github.com/Ebony-Vinyl/dsh-our-free-model/tar.gz/4e44d453183ca2b60a424c190e501a192078308a'
+$profile=Get-Content -LiteralPath $profileFile -Raw | ConvertFrom-Json
+$dependency=$profile.dependencies.$ofmName
+$installed=Test-Path -LiteralPath (Join-Path $ofmInstalled 'package.json')
+$installedVersion=if($installed){(Get-Content -LiteralPath (Join-Path $ofmInstalled 'package.json') -Raw | ConvertFrom-Json).version}else{''}
+$linked=$dependency -match '^(link:|file:)'
+if($installedVersion -ne '2.5.7' -and $linked){throw 'A custom linked Our Free Model version was found. Update that source manually; it will not be replaced.'}
+if($linked -and @($profile.dsh.profile.bundles) -notcontains $ofmName){
+ $profile.dsh.profile.bundles=@($profile.dsh.profile.bundles)+$ofmName
+ [IO.File]::WriteAllText($profileFile,($profile | ConvertTo-Json -Depth 40),[Text.UTF8Encoding]::new($false))
+}
+if(-not $installed -or $installedVersion -ne '2.5.7' -or @($profile.dsh.profile.bundles) -notcontains $ofmName){
+ Say 'Installing verified Our Free Model 2.5.7 from GitHub...'
+ Run-Checked $nodeExe @((Join-Path $PSScriptRoot 'control.mjs'),'stop','--port',[string]$Port)
+ Run-Checked $nodeExe @($cli,'plugin','--profile','web','add',$ofmSpec)
+}
+Run-Checked $nodeExe @((Join-Path $PSScriptRoot 'repair.mjs'),'--skip-start','--no-open')
+$changed=$true
 if($IncludeOps){Say 'Installing optional dsh-ops...';Run-Checked $nodeExe @($npmCli,'exec','--yes','--package=dsh-ops@0.3.0','--','dsh-ops','install','--profile','web')}
 Say '[3/5] Checking bundle uniqueness...'
 $profile=Get-Content -LiteralPath $profileFile -Raw | ConvertFrom-Json
@@ -72,4 +92,3 @@ if(-not $SkipShortcuts){& (Join-Path $PSScriptRoot 'shortcuts.ps1')}
 if(-not $SkipStart){Say '[5/5] Starting the web profile...';$action=if($changed){'restart'}else{'start'};Run-Checked $nodeExe @((Join-Path $PSScriptRoot 'control.mjs'),$action,'--port',[string]$Port,'--no-open')}
 Say 'Ready. Accounts and API keys must be configured by the owner in the DSH settings.'
 if(-not $NoOpen){Run-Checked $nodeExe @((Join-Path $PSScriptRoot 'control.mjs'),'ui')}
-

@@ -25,6 +25,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS = HERE;
@@ -34,7 +36,7 @@ const DRY = argv.includes('--dry-run');
 const QUIET = argv.includes('--quiet');
 const say = (...a) => { if (!QUIET) console.log(...a) };
 const pkgIdx = argv.indexOf('--pkg');
-const PKG = pkgIdx >= 0 ? path.resolve(argv[pkgIdx + 1]) : path.join(process.env.USERPROFILE ?? '', 'dsh-our-free-model');
+const PKG = fs.realpathSync(pkgIdx >= 0 ? path.resolve(argv[pkgIdx + 1]) : path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), 'profiles/web/node_modules/dsh-our-free-model'));
 
 const clientPath = path.join(PKG, 'client.js');
 const indexPath = path.join(PKG, 'index.js');
@@ -75,6 +77,11 @@ if (!fs.existsSync(isoDest)) {
 
 // ─── 1. client.js ─────────────────────────────────────────────────────
 let c = fs.readFileSync(clientPath, 'utf8');
+// Repair the exact malformed separator emitted by the previous patch release.
+const malformed = "'patch.note': 'Patch script: patch-assets/reapply-ofm-patches.mjs',```n";
+if (c.includes(malformed)) { c = c.replace(malformed, malformed.slice(0, -4) + '\n'); act('repair malformed locale separator'); }
+c = c.replace("'script.sub': 'These switches affect this machine only. Nothing is uploaded.'", "'patch.sub': 'These switches affect this machine only. Nothing is uploaded.'");
+c = c.replace("            h('span', { className: 'ofm_note' }, t('patch.note'))))\n", "            h('span', { className: 'ofm_note' }, t('patch.note')))))\n");
 
 const ZH_NEW = [
   "        'chan.account.verify': '\u5B8C\u6210 Google \u5E33\u865F\u9A57\u8B49',",
@@ -239,7 +246,7 @@ if (p.includes('const { balance, error, tier, validationUrl } = await fetchGemin
 // The banner is rendered by 2 call sites; gate both behind hideAds().
 const CALL_OLD2 = "        h(SponsorBanner, { t }),\n";
 const CALL_NEW2 = "        hideAds() ? null : h(SponsorBanner, { t }),\n";
-if (c.includes(CALL_NEW2)) {
+if (c.split(CALL_NEW2).length - 1 === 2) {
   skip('client.js: hide SponsorBanner (2.5.7 embedded)');
 } else {
   const n = c.split(CALL_OLD2).length - 1;
@@ -282,7 +289,7 @@ c = after(c, 'client.js: localpatch zh locale', "'patch.status.title'",
 const LOCALE_EN = [
   "        'nav.tab.localpatch': 'Local patches',",
   "        'patch.title': 'Local patches & advertising',",
-  "        'script.sub': 'These switches affect this machine only. Nothing is uploaded.',",
+  "        'patch.sub': 'These switches affect this machine only. Nothing is uploaded.',",
   "        'patch.ads.title': 'Advertising and sponsor content',",
   "        'patch.ads.hint': 'Hiding this stops the sponsor banner on the free/eac pages.',",
   "        'patch.ads.toggle': 'Hide the sponsor banner',",
@@ -297,7 +304,7 @@ const LOCALE_EN = [
   "        'patch.status.on': 'applied',",
   "        'patch.status.off': 'missing',",
   "        'patch.note': 'Patch script: patch-assets/reapply-ofm-patches.mjs',",
-].join('\n') + '```n';
+].join('\n') + '\n';
 c = after(c, 'client.js: localpatch en locale', "'patch.status.verify': 'Google account verify button'",
   "        'chan.login.open': 'Open sign-in page',\n", LOCALE_EN);
 
@@ -337,7 +344,7 @@ const PAGE = [
   "            h('span', { className: 'ofm_note' }, label),",
   "            h('span', { className: 'ofm_note' }, ok ? t('patch.status.on') : t('patch.status.off')))),",
   "          h('div', { className: 'ofm_row' },",
-  "            h('span', { className: 'ofm_note' }, t('patch.note'))))",
+  "            h('span', { className: 'ofm_note' }, t('patch.note')))))",
   "    }",
   "",
 ].join('\n');
@@ -377,11 +384,32 @@ if (problems.length > 0) {
   for (const m of problems) console.error('  ! ' + m);
   process.exit(1);
 }
-if (DRY) { say('dry run: ' + applied + ' change(s) would be applied'); process.exit(0); }
-if (!fs.existsSync(isoDest) && fs.existsSync(isoAsset)) fs.copyFileSync(isoAsset, isoDest);
-fs.writeFileSync(clientPath, c, 'utf8');
-fs.writeFileSync(indexPath, i, 'utf8');
-fs.writeFileSync(packPath, p, 'utf8');
+const planned = new Map([[clientPath,c],[indexPath,i],[packPath,p]]);
+planned.set(isoDest, fs.readFileSync(fs.existsSync(isoDest)?isoDest:isoAsset,'utf8'));
+// Validate every generated file before changing any live plugin file.
+for (const [file, contents] of planned) {
+  const result = spawnSync(process.execPath, ['--check','--input-type',file === clientPath ? 'commonjs' : 'module'], {input:contents,encoding:'utf8',windowsHide:true,timeout:15000});
+  if (result.status !== 0) { console.error('Syntax validation failed for '+path.relative(PKG,file)+'; nothing written.\n'+result.stderr); process.exit(1); }
+}
+if (DRY) { say('dry run: ' + applied + ' change(s) would be applied; syntax checks passed'); process.exit(0); }
+const changed = [...planned].filter(([file,contents]) => !fs.existsSync(file) || fs.readFileSync(file,'utf8') !== contents);
+if (changed.length) {
+  const backupArg=argv.indexOf('--backup-dir');
+  const backupRoot=backupArg >= 0 ? path.resolve(argv[backupArg+1]) : path.join(process.env.DSH_HOME || path.join(os.homedir(),'.dsh'),'backups');
+  const backup=path.join(backupRoot,'ofm-patch-'+Date.now()+'-'+process.pid);
+  const originals=new Map();
+  for (const [file] of changed) {
+    const previous=fs.existsSync(file)?fs.readFileSync(file):null; originals.set(file,previous);
+    if (previous) { const target=path.join(backup,path.relative(PKG,file)); fs.mkdirSync(path.dirname(target),{recursive:true}); fs.writeFileSync(target,previous); }
+  }
+  // Replace files instead of truncating them: pnpm may hard-link the original
+  // to its shared store or another profile.
+  const replaceFile=(file,contents)=>{const temporary=file+'.ofm-'+process.pid+'.tmp';try{fs.writeFileSync(temporary,contents);fs.renameSync(temporary,file);}finally{if(fs.existsSync(temporary))fs.unlinkSync(temporary);}};
+  const committed=[];
+  try { for (const [file,contents] of changed) {replaceFile(file,contents);committed.push(file);} }
+  catch(e) { for (const file of committed.reverse()) {const previous=originals.get(file);if(previous)replaceFile(file,previous);else if(fs.existsSync(file))fs.unlinkSync(file);} throw e; }
+  say('backup: '+backup);
+}
 say('applied ' + applied + ' change(s)');
 
 

@@ -2,8 +2,14 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {spawn} from 'node:child_process';
+import {spawn,execFile} from 'node:child_process';
 import * as m from './manager.mjs';
+import {inspectPatch} from './patched-plugin/patch-assets/patch-health.mjs';
+const patchAssets=path.join(m.appDir,'patched-plugin','patch-assets');
+const appVersion=m.readJSON(path.join(m.appDir,'package.json'),{}).version||'1.1.0';
+const ofmTarget=()=>path.join(m.dshHome,'profiles/web/node_modules/dsh-our-free-model');
+const runNode=args=>new Promise(resolve=>execFile(process.execPath,args,{encoding:'utf8',timeout:120000,windowsHide:true,maxBuffer:2e6},(error,stdout,stderr)=>resolve({ok:!error,code:error?.code||0,stdout:m.redact(stdout||''),stderr:m.redact(stderr||error?.message||'')})));
+const patchStatus=()=>inspectPatch(ofmTarget());
 const token=crypto.randomBytes(24).toString('hex'),clients=new Set(),logs=[];
 let operation=null,lastStartMs=null,cached=null,inflight=null,setup={running:false,done:false,error:null};
 const uiStateFile=path.join(m.shared,'ui.json');
@@ -12,20 +18,40 @@ async function state(force=false){if(!force&&cached&&Date.now()-cached.time<2500
 function json(res,code,value){res.writeHead(code,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(value));}
 async function body(req){let raw='';for await(const c of req){raw+=c;if(raw.length>10000)throw Error('請求內容過長。');}return raw?JSON.parse(raw):{};}
 async function mutate(name,fn){if(operation)throw Error('另一個操作正在執行，請稍候。');operation=name;cached=null;try{return await fn();}finally{operation=null;cached=null;}}
+function upgradeOfm(repairOnly=false){
+  if(operation)throw Error('另一個操作正在執行，請稍候。');
+  setup={running:true,done:false,error:null};operation='upgrade-ofm';cached=null;
+  log(repairOnly?'正在驗證並修復插件補丁…':'正在檢查插件安裝並套用補丁…');
+  const child=spawn('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(m.appDir,repairOnly?'repair.ps1':'install.ps1'),'-NoOpen','-SkipShortcuts'],{windowsHide:true,env:{...process.env,DSH_HOME:m.dshHome}});
+  for(const stream of [child.stdout,child.stderr]){stream.setEncoding('utf8');let pending='';stream.on('data',data=>{pending+=data;const lines=pending.split(/\r?\n/);pending=lines.pop();for(const l of lines)log(l);});stream.on('end',()=>{if(pending)log(pending);});}
+  let finished=false;
+  const finish=error=>{if(finished)return;finished=true;setup={running:false,done:!error,error:error||null};operation=null;cached=null;log(error||'插件檢查與修復完成；可按「開啟 DSH」更新頁面。');};
+  child.on('error',e=>finish(e.message));
+  child.on('exit',code=>finish(code===0?null:'修復未完成，請查看日誌；已保留備份。'));
+  return {ok:true,started:true};
+}
 function install(){if(setup.running)return {ok:true,already:true};setup={running:true,done:false,error:null};operation='install';cached=null;log('正在檢查環境與安裝所需元件…');const child=spawn('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(m.appDir,'install.ps1'),'-NoOpen'],{windowsHide:true,env:{...process.env,DSH_HOME:m.dshHome}});for(const stream of [child.stdout,child.stderr]){stream.setEncoding('utf8');let pending='';stream.on('data',data=>{pending+=data;const lines=pending.split(/\r?\n/);pending=lines.pop();for(const l of lines)log(l);});stream.on('end',()=>{if(pending)log(pending);});}const finish=error=>{setup={running:false,done:!error,error:error||null};operation=null;cached=null;log(error||'安裝與環境檢查完成。');};child.on('error',e=>finish(e.message));child.on('exit',code=>finish(code===0?null:'安裝未完成，請查看上方日誌；修正後可再次執行。'));return {ok:true,started:true};}
 const server=http.createServer(async(req,res)=>{try{const origin=`http://127.0.0.1:${server.address().port}`;if(req.headers.host!==new URL(origin).host)return json(res,403,{ok:false,error:'不接受這個來源。'});const u=new URL(req.url,origin);if(u.pathname==='/'||u.pathname==='/index.html'){res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-frame-options':'DENY','referrer-policy':'no-referrer'});return res.end(fs.readFileSync(path.join(m.appDir,'dsh-launcher.html')));}if(u.pathname==='/favicon.ico'){res.writeHead(204);return res.end();}if(!u.pathname.startsWith('/api/'))return json(res,404,{ok:false,error:'not found'});if((u.searchParams.get('t')||req.headers['x-dsh-token'])!==token)return json(res,401,{ok:false,error:'unauthorized'});if(req.headers.origin&&req.headers.origin!==origin)return json(res,403,{ok:false,error:'來源不符。'});
- if(u.pathname==='/api/ping'&&req.method==='GET')return json(res,200,{ok:true,name:'dsh-web-launcher',version:'1.0.0'});
+ if(u.pathname==='/api/ping'&&req.method==='GET')return json(res,200,{ok:true,name:'dsh-web-launcher',version:appVersion});
  if(u.pathname==='/api/state'&&req.method==='GET')return json(res,200,{ok:true,state:await state()});
  if(u.pathname==='/api/log'&&req.method==='GET')return json(res,200,{ok:true,lines:logs.slice(-200)});
  if(u.pathname==='/api/events'&&req.method==='GET'){res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache',connection:'keep-alive'});res.write(': connected\n\n');clients.add(res);let busy=false;const timer=setInterval(async()=>{if(busy)return;busy=true;try{const s=await state();if(clients.has(res))res.write(`event: state\ndata: ${JSON.stringify(s)}\n\n`);}catch{}finally{busy=false;}},3000);req.on('close',()=>{clearInterval(timer);clients.delete(res);});return;}
- if(req.method!=='POST')return json(res,405,{ok:false,error:'method not allowed'});
+  if(u.pathname==='/api/patch/status'&&req.method==='GET')return json(res,200,{ok:true,patch:patchStatus()});if(req.method!=='POST')return json(res,405,{ok:false,error:'method not allowed'});
  const b=await body(req);
  if(u.pathname==='/api/install'){if(operation&&!setup.running)throw Error('另一個操作正在執行。');return json(res,202,install());}
  if(['/api/start','/api/stop','/api/restart'].includes(u.pathname)){const r=await mutate(u.pathname,async()=>{const old=m.config().port;const port=m.validPort(Number(b.port??old));if(old!==port&&await m.portOwner(old))throw Error('請先停止目前服務，再更換連接埠。');m.setConfig({port});if(u.pathname==='/api/stop')return m.stop(port,log);const started=await(u.pathname==='/api/restart'?m.restart(port,log):m.start(port,log));lastStartMs=started.startupMs??lastStartMs;if(b.open!==false)await m.openDsh(m.config().mode,port);return started;});return json(res,200,{ok:true,result:r,state:await state(true)});}
  if(u.pathname==='/api/config'){const patch={};if(['app','browser'].includes(b.mode))patch.mode=b.mode;if(['light','dark'].includes(b.theme))patch.theme=b.theme;if(b.port!==undefined){patch.port=m.validPort(Number(b.port));if(patch.port!==m.config().port&&await m.portOwner(m.config().port))throw Error('請先停止服務，再更換連接埠。');}return json(res,200,{ok:true,config:m.setConfig(patch)});}
  if(u.pathname==='/api/open'){if(b.what==='home'){const c=spawn('explorer.exe',[m.dshHome],{windowsHide:true,detached:true,stdio:'ignore'});c.unref();return json(res,200,{ok:true});}if(['url','settings'].includes(b.what)){await m.openDsh();return json(res,200,{ok:true});}throw Error('不支援的開啟操作。');}
  if(u.pathname==='/api/copy'){const c=spawn('clip.exe',[],{windowsHide:true});await new Promise((resolve,reject)=>{c.on('error',reject);c.on('close',code=>code===0?resolve():reject(Error('複製失敗')));c.stdin.end(String(b.text||''),'utf8');});return json(res,200,{ok:true});}
- return json(res,404,{ok:false,error:'unknown endpoint'});
+  if(u.pathname==='/api/patch/reapply')return json(res,202,upgradeOfm(true));
+  if(u.pathname==='/api/patch/guard'){
+    if(!['install','remove','status'].includes(b.action))throw Error('不支援的守護操作。');
+    if(b.action==='status')return json(res,200,{ok:true,patch:patchStatus(),note:patchStatus().healthy?'語法與補丁檢查通過。':'插件需要修復，請按「修復補丁」。'});
+    const r=await mutate('guard',()=>runNode([path.join(patchAssets,'ofm-patch-guard.mjs'),'--'+b.action,'--pkg',ofmTarget(),'--home',m.dshHome]));
+    return json(res,r.ok?200:500,{ok:r.ok,note:r.ok?r.stdout.trim():'',error:r.ok?undefined:r.stderr||r.stdout});
+  }
+  if(u.pathname==='/api/patch/upgrade')return json(res,202,upgradeOfm());
+  return json(res,404,{ok:false,error:'unknown endpoint'});
 }catch(e){log(e.message);if(!res.headersSent)json(res,400,{ok:false,error:m.redact(e.message)});else res.end();}});
 let tailOffsets=new Map();setInterval(()=>{for(const f of [m.outLog,m.errLog]){try{const size=fs.statSync(f).size;let offset=tailOffsets.get(f)||0;if(size<offset)offset=0;if(size>offset){const fd=fs.openSync(f,'r');const len=Math.min(size-offset,65536),buf=Buffer.alloc(len);try{fs.readSync(fd,buf,0,len,offset);}finally{fs.closeSync(fd);}tailOffsets.set(f,offset+len);for(const line of buf.toString('utf8').split(/\r?\n/))log(line);}}catch{}}},1000).unref();
 await m.withLock('ui-start',async()=>{const previous=m.readJSON(uiStateFile);if(previous&&m.alive(previous.pid)){try{const r=await fetch(new URL('/api/ping?t='+new URL(previous.url).searchParams.get('t'),previous.url),{signal:AbortSignal.timeout(2000)});if(r.status===200){process.exitCode=0;return;}}catch{}}await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}/?t=${token}`;m.writeJSON(uiStateFile,{pid:process.pid,url,appDir:m.appDir});fs.writeFileSync(path.join(m.runtime,'ui-url.txt'),url);log('DSH 啟動台已就緒。');});

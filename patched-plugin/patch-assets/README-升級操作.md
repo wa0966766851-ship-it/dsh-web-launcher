@@ -7,11 +7,11 @@
 3. 備份舊 `patched-plugin` -> `patched-plugin-<舊版>-backup-<時間戳>`。
 4. 上游解壓目錄取代 `patched-plugin/`，`patch-assets/` 與 `src/isolated-login.js` 從備份複製回來。
 5. `node patch-assets/reapply-ofm-patches.mjs --pkg <patched-plugin>` 實際套用。
-6. `node $env:TEMP\ofm-verify.mjs` 15 項特徵驗證（0 fail 才算成功）。
+6. 執行 `npm test`，並確認 dry-run 的所有產生檔案均通過語法檢查。只看補丁標記不算驗收。
 7. `install.ps1` 內的 Spec 版本號同步更新。
 8. 同步兩個本機位置：`~/.dsh/profiles/web/node_modules/dsh-our-free-model` 與 `~/dsh-our-free-model`。
 9. `ofm-patch-guard.mjs` 的 snapshot/healthy() 若上游改了特徵（例如 2.5.7 移除 sponsor tab、新增 SponsorBanner），同步更新。
-10. commit + push 前跑 `npm test`（tests/manager.test.mjs 不含插件測試，僅核心邏輯）。
+10. commit + push 前跑 `npm test`；`tests/patch.test.mjs` 包含語法損壞修復、備份、快取硬連結隔離與控制台 API 測試。另用真實瀏覽器驗證插件頁面。
 
 ## 2.5.7 的錨點變化記錄
 

@@ -23,17 +23,31 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { inspectPatch } from './patch-health.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const argv = process.argv.slice(2);
+const argument = name => {const n=argv.indexOf(name);return n>=0?argv[n+1]:undefined;};
+const dshRoot = argument('--home') || process.env.DSH_HOME || path.join(process.env.USERPROFILE ?? '', '.dsh');
 const PATCH = path.join(HERE, 'reapply-ofm-patches.mjs');
-const PKG = path.join(process.env.USERPROFILE ?? '', 'dsh-our-free-model');
-const DATA = path.join(process.env.USERPROFILE ?? '', '.dsh', 'our-free-model');
+const PKG = (() => {
+  if(argument('--pkg'))return path.resolve(argument('--pkg'));
+  if (process.env.OFM_PATCH_TARGET && fs.existsSync(process.env.OFM_PATCH_TARGET)) return process.env.OFM_PATCH_TARGET;
+  const home = process.env.USERPROFILE ?? '';
+  const dshHome = dshRoot;
+  const candidates = [
+    path.join(dshHome, 'profiles', 'web', 'node_modules', 'dsh-our-free-model'),
+    path.join(home, 'dsh-our-free-model'),
+  ];
+  return candidates.find((p) => fs.existsSync(path.join(p, 'client.js'))) ?? candidates[0];
+})();
+const DATA = path.join(dshRoot, 'our-free-model');
+fs.mkdirSync(DATA,{recursive:true});
 const LOG = path.join(DATA, 'patch-guard.log');
 const STATE = path.join(DATA, 'patch-guard-state.json');
 const LOCK = path.join(DATA, 'patch-guard.lock');
 const TASK = 'OFM-PatchGuard';
 
-const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
 
 function stamp() { return new Date().toISOString(); }
@@ -47,27 +61,9 @@ function readJson(p, fallback) {
 }
 
 // ── status ───────────────────────────────────────────────────────────────────
-function snapshot() {
-  const version = (() => {
-    try { return String(JSON.parse(fs.readFileSync(path.join(PKG, 'package.json'), 'utf8')).version ?? '') } catch { return '' }
-  })();
-  const read = (rel) => { try { return fs.readFileSync(path.join(PKG, rel), 'utf8') } catch { return '' } };
-  const client = read('client.js');
-  const pack = read('vendor/channel-pack/pack.js');
-  const index = read('index.js');
-  return {
-    version,
-    verify: client.includes("chan.account.verify"),
-    isolated: fs.existsSync(path.join(PKG, 'src', 'isolated-login.js')),
-    route: index.includes('openIsolatedLogin'),
-    parse: pack.includes('validation_url'),
-    ads: client.includes('ofm.hide-ads'),
-    page: client.includes('function LocalPatchPage'),
-    banner: (client.match(/hideAds\(\) \? null : h\(SponsorBanner/g) || []).length === 2,
-  };
-}
+function snapshot() { return inspectPatch(PKG); }
 function healthy(s) {
-  return s.verify && s.isolated && s.route && s.parse && s.ads && s.page && s.banner;
+  return s.healthy === true;
 }
 
 if (has('--status')) {
@@ -86,7 +82,7 @@ if (has('--install') || has('--remove')) {
   const node = process.execPath;
   const self = fileURLToPath(import.meta.url);
   // Every 10 minutes, and once at logon. /RL LIMITED keeps it user-level.
-  const tr = `"${node}" "${self}" --quiet`;
+  const tr = `"${node}" "${self}" --quiet --pkg "${PKG}" --home "${dshRoot}"`;
   const r = spawnSync('schtasks', [
     '/Create', '/TN', TASK, '/TR', tr, '/SC', 'MINUTE', '/MO', '10', '/F', '/RL', 'LIMITED',
   ], { encoding: 'utf8' });
@@ -123,7 +119,7 @@ if (healthy(before)) {
 
 note(`patches missing on ${before.version || '?'} — reapplying (verify=${before.verify} isolated=${before.isolated} route=${before.route} parse=${before.parse} ads=${before.ads} page=${before.page})`);
 
-const run = spawnSync(process.execPath, [PATCH, '--pkg', PKG, '--quiet'], { encoding: 'utf8' });
+const run = spawnSync(process.execPath, [PATCH, '--pkg', PKG, '--quiet'], { encoding: 'utf8', windowsHide:true, env:{...process.env,DSH_HOME:dshRoot} });
 const after = snapshot();
 const ok = healthy(after);
 
@@ -153,4 +149,3 @@ if (ok) {
 
 note('reapply FAILED — anchors no longer match upstream. Details in patch-guard-state.json');
 process.exit(1);
-

@@ -1150,7 +1150,7 @@ function hideAds() {
         'chan.login.open': 'Open sign-in page',
         'nav.tab.localpatch': 'Local patches',
         'patch.title': 'Local patches & advertising',
-        'script.sub': 'These switches affect this machine only. Nothing is uploaded.',
+        'patch.sub': 'These switches affect this machine only. Nothing is uploaded.',
         'patch.ads.title': 'Advertising and sponsor content',
         'patch.ads.hint': 'Hiding this stops the sponsor banner on the free/eac pages.',
         'patch.ads.toggle': 'Hide the sponsor banner',
@@ -1164,7 +1164,8 @@ function hideAds() {
         'patch.status.banner': 'Sponsor banner switch',
         'patch.status.on': 'applied',
         'patch.status.off': 'missing',
-        'patch.note': 'Patch script: patch-assets/reapply-ofm-patches.mjs',```n        'chan.account.verify': 'Verify this Google account',
+        'patch.note': 'Patch script: patch-assets/reapply-ofm-patches.mjs',
+        'chan.account.verify': 'Verify this Google account',
         'chan.login.other': 'Add another Google account',
         'chan.login.isolated': 'Open independent sign-in window',
         'chan.login.isolatedNote': 'Choose the Google account to add in the new Edge window, then return here. Existing accounts are preserved.',
@@ -4076,7 +4077,7 @@ function hideAds() {
             h('span', { className: 'ofm_note' }, label),
             h('span', { className: 'ofm_note' }, ok ? t('patch.status.on') : t('patch.status.off')))),
           h('div', { className: 'ofm_row' },
-            h('span', { className: 'ofm_note' }, t('patch.note'))))
+            h('span', { className: 'ofm_note' }, t('patch.note')))))
     }
     function PicksPage(props) {
       const { t } = props
