@@ -8,6 +8,7 @@
 - Headless Edge rendered the updated console with OFM 2.5.7 and all patch checks passing; it produced no JavaScript errors.
 - A fresh isolated profile installed Orb, GAL and OFM 2.5.7 from the pinned upstream commit. All 22 patch anchors and generated JavaScript validation passed. That profile started on port 3093, loaded in Edge without import errors, and stopped successfully.
 - Verified the npm registry has no OFM 2.5.7 publication; the installer now uses the verified GitHub commit instead.
+- After publication, the exact public `irm .../patch.ps1 | iex` command updated the existing desktop installation, repaired the plugin and restarted DSH successfully. SHA-256 comparisons confirmed that the web profile package and launcher configuration were unchanged. The running console reports 1.1.0, authenticated DSH is ready on 3080, and all patch checks pass with the 16 existing bundles retained.
 - No live model generation, account verification or paid API calls were used for these checks. Upstream model saturation and channel network failures are separate from this repaired browser-import failure.
 
 ## Original installer — 2026-10-16, Windows x64
