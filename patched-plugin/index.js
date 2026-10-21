@@ -922,6 +922,8 @@ export function apply(ctx, config) {
     const status = updater.status()
     if (status.applying) throw new Error('an upgrade is already running')
     if (status.recoveryRequired) throw new Error('restore the retained upgrade backup before reloading')
+    const localReloadSafety = await import((await import('node:url')).pathToFileURL(path.join(resolveDshHome(), 'our-free-model/patch-assets/update-safety.mjs')).href)
+    localReloadSafety.assertReloadSafe(PKG_DIR)
     const result = await selfReload(ctx, { logger, packageUrl: PKG_URL.href, entryUrl: ENTRY_URL })
     if (result.ok) return result
     throw new Error(result.error)
@@ -933,7 +935,8 @@ export function apply(ctx, config) {
     const pendingKey = Symbol.for('our-free-model.pending-upgrade')
     let pending
     try {
-      const result = await updater.apply({
+      const localUpdateSafety = await import((await import('node:url')).pathToFileURL(path.join(resolveDshHome(), 'our-free-model/patch-assets/update-safety.mjs')).href)
+      const result = await localUpdateSafety.guardedApply(updater, {
         version,
         activate: async installed => {
           pending = { version: installed.version }

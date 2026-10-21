@@ -27,6 +27,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { acquirePatchLock } from './update-safety.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS = HERE;
@@ -37,6 +38,17 @@ const QUIET = argv.includes('--quiet');
 const say = (...a) => { if (!QUIET) console.log(...a) };
 const pkgIdx = argv.indexOf('--pkg');
 const PKG = fs.realpathSync(pkgIdx >= 0 ? path.resolve(argv[pkgIdx + 1]) : path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), 'profiles/web/node_modules/dsh-our-free-model'));
+if(!argv.includes('--owned-lock')){
+  const stateFile=path.join(process.env.DSH_HOME||path.join(os.homedir(),'.dsh'),'our-free-model/upgrade-state.json');
+  if(fs.existsSync(stateFile)){
+    const state=JSON.parse(fs.readFileSync(stateFile,'utf8'));
+    if(['installing','activating','recovery-required'].includes(state.phase))throw Error('上次更新尚未完成，請先復原；不會覆寫復原資料。');
+  }
+}
+if (!DRY && !argv.includes('--owned-lock')) {
+  const release=acquirePatchLock(PKG);
+  process.once('exit',release);
+}
 
 const clientPath = path.join(PKG, 'client.js');
 const indexPath = path.join(PKG, 'index.js');
@@ -189,6 +201,9 @@ c = after(c, 'client.js: auto-expand accounts on refusal', 'const verifySeen = u
 
 // ─── 2. index.js: isolated-login import + route ────────────────────────
 let i = fs.readFileSync(indexPath, 'utf8');
+i = swap(i, 'index.js: local update activation gate', 'localUpdateSafety.guardedApply',
+  '      const result = await updater.apply({',
+  "      const localUpdateSafety = await import((await import('node:url')).pathToFileURL(path.join(resolveDshHome(), 'our-free-model/patch-assets/update-safety.mjs')).href)\n      const result = await localUpdateSafety.guardedApply(updater, {");
 i = after(i, 'index.js: isolated-login import', "import { openIsolatedLogin } from './src/isolated-login.js'",
   "import { createEacLoginPoller } from './src/eac-login.js'\n",
   "import { openIsolatedLogin } from './src/isolated-login.js'\n");
@@ -376,6 +391,12 @@ c = after(c, 'client.js: localpatch nav entry', "['localpatch', t('nav.tab.local
 c = swap(c, 'client.js: localpatch page route', "tab === 'localpatch'",
   "                    : tab === 'picks'\n                      ? h(PicksPage, { t })",
   "                    : tab === 'localpatch'\n                      ? h(LocalPatchPage, { t })\n                    : tab === 'picks'\n                      ? h(PicksPage, { t })");
+c = c.replace("return TABS.includes(saved) ? saved : 'free'", "return saved !== 'localpatch' && TABS.includes(saved) ? saved : 'free'");
+c = c.replace(/('patch\.status\.hint': ')([^'\n]*)(')/g, (_, a, text, b) => a + (/[\u3400-\u9fff]/.test(text) ? '更新啟用前會檢查補丁；不相容則由更新器回退。此頁可直接關閉。' : 'Patches are checked before activation; incompatible updates roll back. This page can be closed.') + b);
+
+i = swap(i, 'index.js: reload health gate', 'assertReloadSafe(PKG_DIR)',
+  '    const result = await selfReload(ctx, { logger, packageUrl: PKG_URL.href, entryUrl: ENTRY_URL })',
+  "    const localReloadSafety = await import((await import('node:url')).pathToFileURL(path.join(resolveDshHome(), 'our-free-model/patch-assets/update-safety.mjs')).href)\n    localReloadSafety.assertReloadSafe(PKG_DIR)\n    const result = await selfReload(ctx, { logger, packageUrl: PKG_URL.href, entryUrl: ENTRY_URL })");
 
 // ─── write ─────────────────────────────────────────────────────────────
 say('');

@@ -1,29 +1,16 @@
 /**
- * ofm-patch-guard.mjs — keep the local patches applied across upstream upgrades.
- *
- * Why: the in-app upgrader (src/updater.js installStaged) overwrites every file
- * in the release manifest and DELETES files the new release dropped. Any local
- * patch therefore disappears on every upgrade. This guard notices that and
- * re-applies, without the user remembering to run anything.
- *
- * It is deliberately conservative:
- *   - one run per minute at most (a lock file), so a loop cannot spin
- *   - writes only when an anchor is missing, and the patch script itself refuses
- *     to write anything if any anchor fails to match
- *   - a failed run leaves a marker and does NOT retry in a tight loop
- *   - never touches the plugin while an upgrade is in flight
- *
- * Run modes:
- *   node ofm-patch-guard.mjs            # one check (what the scheduler runs)
- *   node ofm-patch-guard.mjs --install  # register the Windows scheduled task
- *   node ofm-patch-guard.mjs --remove   # unregister it
- *   node ofm-patch-guard.mjs --status   # show state, change nothing
+ * Explicit patch inspection and legacy task removal. This script does not run
+ * periodically or install a task. Normal protection lives in update-safety.mjs
+ * and the launcher start path. A live DSH package is never changed by this tool.
+ * --status reads health; --remove removes this project's old scheduled task;
+ * --install is retained only to explain that scheduled guarding was retired.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { inspectPatch } from './patch-health.mjs';
+import { checkUpdates } from './update-monitor.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -75,23 +62,16 @@ if (has('--status')) {
 // ── install / remove the scheduled task ──────────────────────────────────────
 if (has('--install') || has('--remove')) {
   if (has('--remove')) {
-    const r = spawnSync('schtasks', ['/Delete', '/TN', TASK, '/F'], { encoding: 'utf8' });
+    const query=spawnSync('schtasks', ['/Query','/TN',TASK,'/XML'],{encoding:'utf8',windowsHide:true});
+    if(query.status!==0){console.log('No legacy guard task found.');process.exit(0);}
+    if(!query.stdout.toLowerCase().includes('ofm-patch-guard.mjs')){console.error('The task name belongs to another command; it was preserved.');process.exit(1);}
+    const r = spawnSync('schtasks', ['/Delete', '/TN', TASK, '/F'], { encoding: 'utf8',windowsHide:true });
     console.log(r.status === 0 ? 'scheduled task removed' : `remove failed: ${r.stderr || r.stdout}`);
     process.exit(r.status === 0 ? 0 : 1);
   }
-  const node = process.execPath;
-  const self = fileURLToPath(import.meta.url);
-  // Every 10 minutes, and once at logon. /RL LIMITED keeps it user-level.
-  const tr = `"${node}" "${self}" --quiet --pkg "${PKG}" --home "${dshRoot}"`;
-  const r = spawnSync('schtasks', [
-    '/Create', '/TN', TASK, '/TR', tr, '/SC', 'MINUTE', '/MO', '10', '/F', '/RL', 'LIMITED',
-  ], { encoding: 'utf8' });
-  if (r.status !== 0) {
-    console.error(`install failed: ${r.stderr || r.stdout}`);
-    process.exit(1);
-  }
-  console.log(`scheduled task "${TASK}" installed: every 10 minutes -> ${tr}`);
-  process.exit(0);
+  console.error('Periodic guard installation has been retired. Protection runs on update activation and launcher start; no resident guard is required.');
+  process.exit(1);
+
 }
 
 // ── one check ────────────────────────────────────────────────────────────────
@@ -100,7 +80,7 @@ if (!fs.existsSync(PKG)) { note('FATAL: plugin directory missing at ' + PKG); pr
 
 // Never fight an upgrade that is mid-flight.
 const upState = readJson(path.join(DATA, 'upgrade-state.json'), null);
-if (upState && ['installing', 'activating'].includes(upState.phase)) {
+if (upState && ['installing', 'activating', 'recovery-required'].includes(upState.phase)) {
   note(`upgrade in progress (${upState.phase}); skipping`);
   process.exit(0);
 }
@@ -113,9 +93,15 @@ try {
 try { fs.writeFileSync(LOCK, String(Date.now())) } catch {}
 
 const before = snapshot();
-if (healthy(before)) {
+await checkUpdates(dshRoot,{installed:{'Our Free Model':before.version}}).catch(e=>note('update check: '+e.message));
+if (healthy(before) && before.updateGate) {
   process.exit(0);
 }
+// The live updater uses the activation gate. Do not race a live file watcher
+// after an update performed outside that gate; repair at a deliberate restart.
+const service=readJson(path.join(dshRoot,'launcher/service.json'),null);
+if(service?.pid){let running=false;try{process.kill(service.pid,0);running=true;}catch{}
+  if(running){note('repair pending: DSH is running; use Repair or restart through the launcher.');process.exit(0);}}
 
 note(`patches missing on ${before.version || '?'} — reapplying (verify=${before.verify} isolated=${before.isolated} route=${before.route} parse=${before.parse} ads=${before.ads} page=${before.page})`);
 

@@ -14,6 +14,8 @@ export function inspectPatch(pkg) {
     verify: client.includes('chan.account.verify'),
     isolated: fs.existsSync(path.join(pkg, 'src/isolated-login.js')),
     route: index.includes('openIsolatedLogin'), parse: pack.includes('validation_url'),
+    updateGate: index.includes('localUpdateSafety.guardedApply'),
+    reloadGate: index.includes('assertReloadSafe(PKG_DIR)'),
     autoexpand: client.includes('const verifySeen = useRef(new Set())'),
     ads: client.includes('ofm.hide-ads'), page: client.includes('function LocalPatchPage'),
     banner: (client.match(/hideAds\(\) \? null : h\(SponsorBanner/g) || []).length === 2,

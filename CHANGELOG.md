@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0 — 2026-10-21
+
+- Replace periodic patch guarding with update activation and launcher-start checks; refuse incompatible releases before activation and use the upstream verified rollback.
+- Retain recovery code outside the package for interrupted installs, serialize repairs with updates, and preserve pending recovery data.
+- Add independent plugin reload, explicit page reload, and clearly labeled window opening without service restart. Exit the optional console server after its last page closes.
+- Detect repository transfers by stable GitHub ID, check source versions on demand with a cache, and preserve installed versions on offline failures or stale installers.
+- Add signed-update, rollback, recovery corruption, lock, transfer, offline, console lifecycle and existing-installer tests.
+
 ## 1.1.0 — 2026-10-21
 
 - Fix OFM browser import failures caused by a malformed locale separator and an unmatched parenthesis in the local patch page.

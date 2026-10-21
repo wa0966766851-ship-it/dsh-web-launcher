@@ -6,10 +6,11 @@ if($command){$candidates+=$command.Source}
 $candidates+=(Join-Path $env:ProgramFiles 'nodejs\node.exe')
 $nodeExe=$candidates | Where-Object {Test-Path -LiteralPath $_} | Select-Object -First 1
 if(-not $nodeExe){throw 'Node.js is missing. Run the full bootstrap installer.'}
-$repairArguments=@((Join-Path $PSScriptRoot 'repair.mjs'))
-if($NoOpen){$repairArguments+='--no-open'}
+$repairArguments=@((Join-Path $PSScriptRoot 'repair.mjs'),'--no-open')
 if($SkipStart){$repairArguments+='--skip-start'}
 & $nodeExe @repairArguments
 if($LASTEXITCODE -ne 0){throw 'Repair failed. The original files were backed up; see the error above.'}
+& $nodeExe (Join-Path $PSScriptRoot 'patched-plugin\patch-assets\ofm-patch-guard.mjs') --remove
+if($LASTEXITCODE -ne 0){Write-Warning 'Legacy task could not be removed automatically. Use the launcher removal button to inspect it.'}
 if(-not $SkipShortcuts){& (Join-Path $PSScriptRoot 'shortcuts.ps1')}
-if(-not $NoOpen){& $nodeExe (Join-Path $PSScriptRoot 'control.mjs') ui; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}}
+# Repair is intentionally quiet: open the existing desktop shortcut when needed.

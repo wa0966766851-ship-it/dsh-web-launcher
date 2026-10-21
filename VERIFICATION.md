@@ -1,5 +1,18 @@
 # Verification
 
+## 1.2.0 — 2026-10-21, Windows x64
+
+- 24 automated tests pass. The deployed desktop launcher reports 1.2.0; authenticated DSH is ready with all 16 existing bundles. Real launcher reuse and OFM hot reload retained the service PID. Profile package and launcher configuration hashes were unchanged; OFM runtime settings are allowed to record reload metadata.
+- Headless Edge rendered the deployed console and verified all three independent open, page refresh and plugin reload controls. The visible authentication token is masked.
+- Live upstream source checks found OFM 2.5.7 and DSH 0.2.1-rc.2 on their default branches; this does not assert npm publication or install them. API-rate-limit fallback verifies repository page identity before reading version information.
+
+- Automated tests exercise the real upstream PluginUpdater with a local HTTP release and an ephemeral Ed25519 test key. Valid releases are patched before activation; incompatible releases and failed runtime activation restore the original package. Invalid signatures do not reach installed files.
+- Interrupted-update recovery verifies the backup, refuses corrupted snapshots without wiping the current package, and preserves recovery helpers while recovery is pending. Lock tests cover concurrent reloads, dead owners and abandoned empty lock files.
+- Repository monitoring tests cover stable-ID transfers, identity mismatch, offline operation, cached versions after local upgrades and prerelease comparisons.
+- An isolated authenticated service fixture verifies launcher reuse and plugin reload retain the service PID. The console remains alive with an event stream, exits after that stream closes, and leaves the service running. The test uses a shortened idle timeout; production defaults to 60 seconds.
+- The existing-install PowerShell flow runs against an isolated profile with a newer OFM version, retains the profile bytes and dependency, and executes no plugin installation or service startup.
+- These are updater and launcher checks, not live provider generation or a guarantee that every future upstream release remains compatible. Real account eligibility and paid API calls are not part of the tests.
+
 ## 1.1.0 — 2026-10-21, Windows x64
 
 - Reproduced the active client's `SyntaxError: Unexpected template string`; after correcting the malformed separator, validation also caught the missing closing parenthesis in the added patch page.

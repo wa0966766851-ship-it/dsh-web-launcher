@@ -159,7 +159,8 @@
             <button class="mini-btn" id="btnCopy">複製</button>
           </div>
           <div class="quick">
-            <button data-open="url">開啟 DSH</button>
+            <button data-open="url">開啟 DSH 視窗（不重啟）</button>
+            <button id="btnReloadPage">重新載入此頁</button>
             <button data-open="home">開啟 .dsh 資料夾</button>
             <button id="btnInstall">安裝／檢查元件</button>
           </div>
@@ -186,10 +187,13 @@
           <div class="quick" style="grid-template-columns:1fr 1fr">
             <button id="btnOfmUpgrade">檢查安裝並修復</button>
             <button id="btnPatches">修復補丁並重啟</button>
-            <button id="btnGuardInstall">安裝守護任務</button>
+            <button id="btnReloadPlugin">重載外掛（不重啟 DSH）</button>
+            <button id="btnGuardInstall">移除舊版排程</button>
             <button id="btnGuardStatus">補丁自檢</button>
+            <button id="btnUpdateCheck">檢查新版與專案搬移</button>
           </div>
           <div class="notes" id="patchNotes"></div>
+          <div class="notes" id="updateNotes">更新保護不需要保持此視窗開啟。關閉後啟動台會自動休眠。</div>
         </div>
 
         <div class="panel log-panel">
@@ -211,6 +215,7 @@ const $ = (id) => document.getElementById(id);
 
 const logBody = $('logBody');
 let logLines = [];
+let authenticatedUrl = '';
 
 function toast(msg) {
   const t = $('toast');
@@ -242,7 +247,7 @@ async function api(path, opts) {
 let busy = false;
 function setBusy(v, label) {
   busy = v;
-  for (const id of ['btnStart','btnStop','btnRestart','btnOfmUpgrade','btnPatches','btnGuardInstall','btnGuardStatus']) $(id).disabled = v;
+  for (const id of ['btnStart','btnStop','btnRestart','btnOfmUpgrade','btnPatches','btnGuardInstall','btnGuardStatus','btnReloadPlugin']) $(id).disabled = v;
   $('led').className = 'led ' + (v ? 'busy' : '');
   if (v) $('statusText').textContent = label || '處理中…';
 }
@@ -262,7 +267,8 @@ function render(state) {
   $('sStart').textContent = state.startupMs ? (state.startupMs / 1000).toFixed(1) + ' 秒' : '—';
   $('sOrb').textContent = state.orbHelpers ? (state.orbHelpers + ' 個') : '0 個';
 
-  if (state.url) { $('urlText').textContent = state.url; $('urlText').classList.remove('dim-v'); }
+  authenticatedUrl = state.url || '';
+  if (state.url) { $('urlText').textContent = state.url.replace(/([?&]token=)[^&]+/g, '$1[隱藏]'); $('urlText').classList.remove('dim-v'); }
   else { $('urlText').textContent = '（尚未取得已認證 URL）'; $('urlText').classList.add('dim-v'); }
   $('btnCopy').disabled = !state.url;
 
@@ -282,7 +288,7 @@ function render(state) {
 
   if(document.activeElement!==$('portInput')) $('portInput').value = state.port;
   $('btnInstall').disabled=Boolean(state.busy);
-  for(const id of ['btnStart','btnStop','btnRestart','btnOfmUpgrade','btnPatches','btnGuardInstall','btnGuardStatus']) $(id).disabled=busy||Boolean(state.busy);
+  for(const id of ['btnStart','btnStop','btnRestart','btnOfmUpgrade','btnPatches','btnGuardInstall','btnGuardStatus','btnReloadPlugin']) $(id).disabled=busy||Boolean(state.busy);
   if(state.setup?.error) setNotes(state.setup.error);
   for (const d of $('modeSeg').children) d.classList.toggle('active', d.dataset.mode === state.mode);
   document.documentElement.dataset.theme = state.theme || 'light';
@@ -336,13 +342,16 @@ $('btnRestart').onclick = () => act('restart', '重新啟動中…', () => api('
 }));
 
 $('btnCopy').onclick = async () => {
-  const txt = $('urlText').textContent;
+  const txt = authenticatedUrl;
   if (!txt || txt.startsWith('（')) return;
   const r = await api('/api/copy', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: txt }) });
   toast(r.ok ? '已複製 URL' : '複製失敗');
 };
 
 $('btnClear').onclick = () => { logBody.innerHTML = ''; logLines = []; };
+$('btnReloadPage').onclick = () => location.reload();
+$('btnReloadPlugin').onclick = () => patchAct('重載外掛', () =>
+  api('/api/patch/reload', {method:'POST',headers:{'content-type':'application/json'},body:'{}'}));
 $('btnInstall').onclick = () => act('install','正在檢查…',()=>api('/api/install',{method:'POST'}));
 
 for (const b of document.querySelectorAll('[data-open]')) {
@@ -379,7 +388,7 @@ async function refreshPatches() {
     if (!r.ok) return;
     const s = r.patch;
     $('pOfm').textContent = s.version || '未安裝';
-    const flags = [['syntax', '前端語法'], ['verify', '驗證鈕'], ['isolated', '獨立登入'], ['route','登入路由'], ['parse','驗證資訊'], ['autoexpand', '自動展開'], ['banner', '橫幅開關'], ['page', '補丁頁']];
+    const flags = [['syntax', '前端語法'], ['verify', '驗證鈕'], ['isolated', '獨立登入'], ['route','登入路由'], ['parse','驗證資訊'], ['autoexpand', '自動展開'], ['banner', '橫幅開關'], ['page', '補丁頁'], ['updateGate','更新保護'], ['reloadGate','重載保護']];
     const missing = flags.filter(([k]) => !s[k]);
     $('pPatch').innerHTML = missing.length === 0
       ? '<span class="ok-v">全部已套用</span>'
@@ -390,13 +399,22 @@ async function refreshPatches() {
 }
 
 function setPatchNotes(t) { $('patchNotes').textContent = t || ''; }
+async function showUpdates(refresh=false){
+  try{
+    const r=await api('/api/updates'+(refresh?'?refresh=1':''));
+    const names={available:'有新版（尚未安裝）',current:'與上游原始碼同版',ahead:'本機版本較新，保留本機版本',observed:'已查到上游版本',moved:'專案已搬移，需確認來源',archived:'專案已封存',unavailable:'暫時無法查詢，保留目前版本'};
+    $('updateNotes').textContent=r.updates.projects.map(p=>p.name+'：'+(names[p.status]||p.status)+(p.version?' '+p.version:'')+(p.moved?' → '+p.repo:'')).join('\n')+'\n只偵測，不會在聊天時自動更新。';
+  }catch(e){$('updateNotes').textContent='更新查詢失敗；目前版本不受影響。';}
+}
+$('btnUpdateCheck').onclick=()=>showUpdates(true);
+showUpdates();
 
 async function patchAct(label, fn) {
   setBusy(true, label);
   setPatchNotes('');
   try {
     const r = await fn();
-    const note=r.started?'背景處理中，完成結果會顯示於即時日誌。':(r.note||'完成');
+    const note=r.started?'背景處理中，完成結果會顯示於即時日誌。':(r.note||r.result?.notes?.join('\n')||'完成');
     setPatchNotes(r.ok === false ? (r.error || '操作失敗') : note);
     appendLog({ t: Date.now(), line: '[補丁] ' + label + '：' + (r.ok === false ? (r.error || '失敗') : note) });
   } catch (e) { setPatchNotes('發生錯誤：' + e.message); }
@@ -409,8 +427,8 @@ $('btnOfmUpgrade').onclick = () => patchAct('升級 Our Free Model', () =>
 $('btnPatches').onclick = () => patchAct('重新套用補丁', () =>
   api('/api/patch/reapply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }));
 
-$('btnGuardInstall').onclick = () => patchAct('安裝守護任務', () =>
-  api('/api/patch/guard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'install' }) }));
+$('btnGuardInstall').onclick = () => patchAct('移除舊版排程', () =>
+  api('/api/patch/guard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'remove' }) }));
 
 $('btnGuardStatus').onclick = () => patchAct('補丁自檢', () =>
   api('/api/patch/guard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'status' }) }));

@@ -13,6 +13,12 @@ Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/wa0966766851-ship-it
 Expand-Archive -LiteralPath $archive -DestinationPath $stageRoot -Force
 $source=Join-Path $stageRoot 'dsh-web-launcher-main'
 if(-not (Test-Path -LiteralPath (Join-Path $source 'install.ps1'))){throw 'The GitHub archive is incomplete.'}
+$existingLaunchers=@((Join-Path ([Environment]::GetFolderPath('Desktop')) 'DSH'),(Join-Path $installRoot 'app'))
+if($existingLaunchers | Where-Object {Test-Path -LiteralPath (Join-Path $_ 'control.mjs')}){
+ Write-Host 'Existing installation found; using the current repair entry without replacing your profile.'
+ & (Join-Path $source 'patch.ps1') -NoOpen:$NoOpen -SkipStart:$SkipStart -SkipShortcuts:$SkipShortcuts
+ return
+}
 Write-Host '[2/3] Checking Node.js...'
 $node=Get-Command node.exe -ErrorAction SilentlyContinue
 $supported=$false

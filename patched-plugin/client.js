@@ -441,7 +441,7 @@ function hideAds() {
         'patch.ads.off': '贊助横幅目前顯示中',
         'patch.ads.on': '贊助横幅已隱藏',
         'patch.status.title': '補丁狀態',
-        'patch.status.hint': '每次插件升級徎需重新套用補丁（謍無操心，守護任務會自動補上）。',
+        'patch.status.hint': '更新啟用前會檢查補丁；不相容則由更新器回退。此頁可直接關閉。',
         'patch.status.verify': 'Google 帳號驗證按鈕',
         'patch.status.isolated': 'WorkBuddy 獨立登入',
         'patch.status.autoexpand': '被拒絕時自動展鎛帳號清單',
@@ -1157,7 +1157,7 @@ function hideAds() {
         'patch.ads.off': 'The banner is visible',
         'patch.ads.on': 'The banner is hidden',
   'patch.status.title': 'Patch status',
-        'patch.status.hint': 'Re-apply after every plugin upgrade (the guard task re-applies automatically).',
+        'patch.status.hint': '更新啟用前會檢查補丁；不相容則由更新器回退。此頁可直接關閉。',
         'patch.status.verify': 'Google account verify button',
         'patch.status.isolated': 'WorkBuddy isolated sign-in',
         'patch.status.autoexpand': 'Auto-expand on refusal',
@@ -6340,7 +6340,7 @@ function hideAds() {
       const [tab, setTab] = useState(() => {
         try {
           const saved = window.localStorage?.getItem(TAB_KEY)
-          return TABS.includes(saved) ? saved : 'free'
+          return saved !== 'localpatch' && TABS.includes(saved) ? saved : 'free'
         } catch { return 'free' }
       })
       const tabRefs = useRef({})

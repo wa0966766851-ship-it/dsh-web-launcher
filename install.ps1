@@ -70,15 +70,23 @@ $dependency=$profile.dependencies.$ofmName
 $installed=Test-Path -LiteralPath (Join-Path $ofmInstalled 'package.json')
 $installedVersion=if($installed){(Get-Content -LiteralPath (Join-Path $ofmInstalled 'package.json') -Raw | ConvertFrom-Json).version}else{''}
 $linked=$dependency -match '^(link:|file:)'
-if($installedVersion -ne '2.5.7' -and $linked){throw 'A custom linked Our Free Model version was found. Update that source manually; it will not be replaced.'}
+$comparison=if($installed){& $nodeExe (Join-Path $PSScriptRoot 'patched-plugin\patch-assets\update-monitor.mjs') --compare $installedVersion '2.5.7'}else{-1}
+if($installed -and $LASTEXITCODE -ne 0){throw 'Cannot compare installed plugin version; keeping the current installation.'}
+if([int]$comparison -lt 0 -and $linked){throw 'A custom linked Our Free Model version was found. Update that source manually; it will not be replaced.'}
+if([int]$comparison -gt 0){Say ('Newer installed plugin preserved: '+$installedVersion)}
 if($linked -and @($profile.dsh.profile.bundles) -notcontains $ofmName){
  $profile.dsh.profile.bundles=@($profile.dsh.profile.bundles)+$ofmName
  [IO.File]::WriteAllText($profileFile,($profile | ConvertTo-Json -Depth 40),[Text.UTF8Encoding]::new($false))
 }
-if(-not $installed -or $installedVersion -ne '2.5.7' -or @($profile.dsh.profile.bundles) -notcontains $ofmName){
+if(-not $installed -or [int]$comparison -lt 0){
  Say 'Installing verified Our Free Model 2.5.7 from GitHub...'
  Run-Checked $nodeExe @((Join-Path $PSScriptRoot 'control.mjs'),'stop','--port',[string]$Port)
  Run-Checked $nodeExe @($cli,'plugin','--profile','web','add',$ofmSpec)
+}
+$profile=Get-Content -LiteralPath $profileFile -Raw | ConvertFrom-Json
+if($installed -and @($profile.dsh.profile.bundles) -notcontains $ofmName){
+ $profile.dsh.profile.bundles=@($profile.dsh.profile.bundles)+$ofmName
+ [IO.File]::WriteAllText($profileFile,($profile | ConvertTo-Json -Depth 40),[Text.UTF8Encoding]::new($false))
 }
 Run-Checked $nodeExe @((Join-Path $PSScriptRoot 'repair.mjs'),'--skip-start','--no-open')
 $changed=$true
