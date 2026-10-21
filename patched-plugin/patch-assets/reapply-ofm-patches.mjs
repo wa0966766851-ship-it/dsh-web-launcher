@@ -217,8 +217,19 @@ const ROUTE = [
   "      }",
   "",
 ].join('\n');
-i = after(i, 'index.js: /channels/login/isolated route', "routePath === '/channels/login/isolated'",
-  "      if (method === 'GET' && routePath === '/summary') {\n", ROUTE);
+// 錨點必須是 `/summary` 區塊的**結束括號**，不能是它的 `{`。
+// 舊實作把 ROUTE 插在 `/summary {` 之後 → handler 被埋進那個 `if` 裡，
+// 外層條件是 GET/summary、內層卻是 POST/login —— 永遠不成立，
+// 於是「新增其他 Google 帳號」永遠打不開隔離視窗（實測 2026-10-22）。
+const SUMMARY_BLOCK_END = "      if (method === 'GET' && routePath === '/summary') {\n        return send(200, buildSummary(deps))\n      }\n";
+if (!i.includes("routePath === '/channels/login/isolated'")) {
+  if (!i.includes(SUMMARY_BLOCK_END)) {
+    problems.push('index.js: /summary block not in expected shape - cannot place the isolated-login route safely');
+  } else {
+    act('index.js: /channels/login/isolated route');
+    i = i.replace(SUMMARY_BLOCK_END, SUMMARY_BLOCK_END + ROUTE);
+  }
+} else { skip('index.js: /channels/login/isolated route'); }
 
 // ─── 3. pack.js: parse VALIDATION_REQUIRED + carry it into `extra` ──────
 let p = fs.readFileSync(packPath, 'utf8');

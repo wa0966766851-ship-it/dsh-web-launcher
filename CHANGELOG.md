@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 — 2026-10-22
+
+- Fix the isolated WorkBuddy sign-in route being injected inside the `GET /summary` block. The handler's outer guard was `GET /summary` while its own condition was `POST /channels/login/isolated`, so it could never run — "Add another Google account" silently did nothing and no isolated Edge window was ever created (verified: no new `login-browser` profile since 2026-10-12).
+- Anchor the route insertion on the closed `/summary` block instead of its opening brace, and fail loudly when the anchor is not in the expected shape rather than emitting dead code.
+- Open the isolated Edge window before navigating the fallback popup, so WorkBuddy cannot bounce straight back to the already-signed-in account.
+- Carry `chooseGoogle` into the login state so the modal's reopen button keeps `prompt=select_account`.
+
 ## 1.2.0 — 2026-10-21
 
 - Replace periodic patch guarding with update activation and launcher-start checks; refuse incompatible releases before activation and use the upstream verified rollback.
