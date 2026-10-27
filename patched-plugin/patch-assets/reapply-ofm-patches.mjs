@@ -199,6 +199,34 @@ if (c.includes('isolated: isolatedDivert')) {
   problems.push('client.js: setLogin 錨點不符');
 }
 
+// 1d-4. isolatedDivert 的作用域：它原本定義在 `if (url !== '')` 區塊內（縮排 12），
+// 但 setLogin 在那個區塊之外（縮排 10）呼叫，於是執行期報
+// "isolatedDivert is not defined"。把它提到與 setLogin 同層。
+const SCOPE_OLD = [
+  "          const url = value?.loginUrl",
+  "          if (typeof accountId !== 'string' || accountId === '') throw new Error('bad-answer')",
+  "          if (typeof url === 'string' && url !== '') {",
+].join('\n');
+const SCOPE_NEW = [
+  "          const url = value?.loginUrl",
+  "          // WorkBuddy 走宿主的獨立 Edge 視窗（乾淨 profile，才能真正選到「其他帳號」）。",
+  "          // 定義必須在 url 判斷之外，否則 setLogin 取不到。",
+  "          const isolatedDivert = channel.id === 'workbuddy'",
+  "          if (typeof accountId !== 'string' || accountId === '') throw new Error('bad-answer')",
+  "          if (typeof url === 'string' && url !== '') {",
+].join('\n');
+
+if (c.includes('定義必須在 url 判斷之外')) {
+  skip('client.js: isolatedDivert 作用域');
+} else if (c.includes(SCOPE_OLD)) {
+  act('client.js: isolatedDivert 作用域');
+  c = c.replace(SCOPE_OLD, SCOPE_NEW);
+  // 移除原本在區塊內的定義
+  c = c.replace(/\n\s+const isolatedDivert = channel\.id === 'workbuddy'\n\s+let isolatedOk = false/, '\n            let isolatedOk = false');
+} else {
+  problems.push('client.js: isolatedDivert 作用域錨點不符');
+}
+
 // 1e. WorkBuddy "add another Google account" button
 const ADD_ANCHOR = "          h('button', { type: 'button', className: 'ofm_btn', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'add' ? 'true' : undefined, onClick: startLogin }, busy === 'add' ? '\u2026' : t('chan.act.add')),\n";
 const OTHER_BTN = "          channel.id === 'workbuddy' ? h('button', { type: 'button', className: 'ofm_btn', disabled: busy !== '' || !rpc, onClick: () => startLogin(true) }, t('chan.login.other')) : null,\n";

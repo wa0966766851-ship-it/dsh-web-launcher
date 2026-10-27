@@ -190,13 +190,29 @@ if (setLoginIdx >= 0) {
 // 彈窗必須讀 login.isolated
 check('彈窗讀取 login.isolated', clientSrc.includes('login.isolated'));
 
+// 作用域：isolatedDivert 必須定義在 setLogin 所在（或更外層）的作用域。
+// 實際踩過的坑：定義留在 `if (url !== '')` 區塊內（縮排 12），setLogin 在區塊外
+// （縮排 10）呼叫，執行期直接報 "isolatedDivert is not defined" —— 語法檢查抓不到。
+const divertDefIdx = firstLine(C, "const isolatedDivert = channel.id === 'workbuddy'");
+if (divertDefIdx >= 0 && setLoginIdx >= 0) {
+  const defIndent = (C[divertDefIdx].match(/^\s*/) || [''])[0].length;
+  const useIndent = (C[setLoginIdx].match(/^\s*/) || [''])[0].length;
+  check('isolatedDivert 定義在 setLogin 之前', divertDefIdx < setLoginIdx,
+    'def@' + (divertDefIdx + 1) + ' use@' + (setLoginIdx + 1));
+  check('isolatedDivert 縮排不大於 setLogin（同層或更外層）', defIndent <= useIndent,
+    'def=' + defIndent + ' use=' + useIndent +
+    (defIndent <= useIndent ? '' : ' → 定義在內層區塊，setLogin 取不到'));
+}
+
 /* ── 4. 補丁腳本必須能修復舊版 ── */
 
 console.log('');
 console.log('[4] reapply-ofm-patches.mjs — 升級修復能力');
 
 if (patchSrc === null) {
-  check('補丁腳本存在', false, '找不到 patch-assets/reapply-ofm-patches.mjs');
+  // 已安裝的插件目錄不含 patch-assets（那是啟動器專案的資產），
+  // 這種情況下第 4 組不適用 —— 跳過而不是判失敗。
+  console.log('  skip 目標目錄不含 patch-assets（已安裝插件），跳過升級修復檢查');
 } else {
   check('補丁能偵測並重排錯誤嵌套', patchSrc.includes('NEST_BAD'),
     patchSrc.includes('NEST_BAD') ? '' : '舊安裝的壞路由不會被修');

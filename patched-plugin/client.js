@@ -4455,17 +4455,15 @@ function hideAds() {
           if (!current()) { attempt.cancelled = true; closeLoginPopup(attempt.popup); return }
           const accountId = value?.accountId
           const url = value?.loginUrl
+          // WorkBuddy 走宿主的獨立 Edge 視窗（乾淨 profile，才能真正選到「其他帳號」）。
+          // 定義必須在 url 判斷之外，否則 setLogin 取不到（曾因此報 isolatedDivert is not defined）。
+          const isolatedDivert = channel.id === 'workbuddy'
           if (typeof accountId !== 'string' || accountId === '') throw new Error('bad-answer')
           if (typeof url === 'string' && url !== '') {
             const target = new URL(url)
             if (url.length > 2048 || !['http:', 'https:'].includes(target.protocol) || target.username || target.password) throw new Error('bad-login-url')
             let opened = false
 
-            // WorkBuddy 走宿主的獨立 Edge 視窗（乾淨 profile，才能真正選到「其他帳號」）。
-            // 必須先於一般 popup 導航執行：舊實作先讓 popup 跳 /login，WorkBuddy 會用
-            // 瀏覽器既有的登入態直接回跳，於是「新增其他 Google 帳號」永遠回到已登入的
-            // 帳號，隔離視窗根本不會被打開（實測 2026-10-22：profile 目錄自 10/12 起沒再新增）。
-            const isolatedDivert = channel.id === 'workbuddy'
             let isolatedOk = false
             if (isolatedDivert) {
               try {
