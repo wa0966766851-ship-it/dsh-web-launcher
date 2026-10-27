@@ -4460,17 +4460,6 @@ function hideAds() {
             const target = new URL(url)
             if (url.length > 2048 || !['http:', 'https:'].includes(target.protocol) || target.username || target.password) throw new Error('bad-login-url')
             let opened = false
-            try {
-              if (attempt.popup && !attempt.popup.closed) {
-                attempt.popup.location.replace(url)
-                opened = true
-                attempt.popup = null
-              }
-            } catch { /* the host can open it instead */ }
-            closeLoginPopup(attempt.popup); attempt.popup = null
-            if (!opened) {
-              try { opened = (await post('/open-external', { url }, 15_000))?.opened === true } catch { /* manual link remains available */ }
-            }
 
             // WorkBuddy 走宿主的獨立 Edge 視窗（乾淨 profile，才能真正選到「其他帳號」）。
             // 必須先於一般 popup 導航執行：舊實作先讓 popup 跳 /login，WorkBuddy 會用

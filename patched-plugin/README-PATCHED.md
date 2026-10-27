@@ -14,6 +14,7 @@
 | **Gemini 多模型擴充** | vendor/channel-pack/pack.js | 上游只註冊 `gemini-3.8-flash` 一個模型。本補丁加入 `gemini-2.5-flash`、`gemini-2.5-flash-lite`、`gemini-2.5-pro`、`claude-sonnet-4-6`（Antigravity 通道實測可用） |
 | **isolated 路由錯誤嵌套修復** | index.js | 舊補丁把 `/channels/login/isolated` 插進了 `GET /summary` 的 if 區塊內，導致 POST 永遠進不來。本補丁偵測並重排 |
 | **login.isolated 欄位補齊** | client.js | `setLogin()` 補上 `isolated: isolatedDivert`，讓彈窗的「重新開啟」按鈕走對分支 |
+| **移除提前 popup 導航** | client.js | 舊版在 isolated 分流「之前」就把一般 popup 導向 /login，抵銷隔離設計。本補丁移除該區塊，確保獨立視窗優先 |
 
 ## 已知問題與修正記錄（2026-10-28）
 
@@ -23,7 +24,7 @@
 | --- | --- | --- |
 | **isolated 路由錯誤嵌套** | 點「新增其他 Google 帳號」後，獨立 Edge 視窗不開啟；網路面板看不到 `POST /channels/login/isolated` 請求 | `index.js` 把路由移出 `GET /summary` 區塊，改為平級獨立 `if` |
 | **login.isolated 未賦值** | 登入彈窗的「開啟獨立登入視窗」按鈕走一般登入頁分支 | `setLogin()` 加入 `isolated: isolatedDivert` |
-| **登入順序錯誤** | 一般 popup 先導航到 /login，才嘗試獨立視窗，造成帳號混淆 | 改為 `isolatedOk` 旗標：獨立視窗成功就跳過一般 popup |
+| **登入順序錯誤** | 一般 popup 先導航到 /login，才嘗試獨立視窗，造成帳號混淆 | **移除提前導航區塊**，改為 isolated 優先、失敗才退回一般 popup |
 
 ### 驗證方式
 

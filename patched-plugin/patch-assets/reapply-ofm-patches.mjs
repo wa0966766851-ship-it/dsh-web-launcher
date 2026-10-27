@@ -130,21 +130,74 @@ c = swap(c, 'client.js: startLogin signature',
     "        chooseGoogle = chooseGoogle === true && channel.id === 'workbuddy'",
   ].join('\n'));
 
-c = after(c, 'client.js: startLogin isolated divert', "const isolatedDivert = channel.id === 'workbuddy'",
+c = after(c, 'client.js: startLogin isolated divert', 'const isolatedDivert = channel.id === \'workbuddy\'',
   "            if (!opened) {\n" +
   "              try { opened = (await post('/open-external', { url }, 15_000))?.opened === true } catch { /* manual link remains available */ }\n" +
   "            }\n",
   [
     "",
-    "            // WorkBuddy: hand the URL to the host's isolated Edge window instead.",
+    "            // WorkBuddy: hand the URL to the host's isolated Edge window FIRST.",
+    "            // A plain popup that already navigated to /login reuses the browser's",
+    "            // signed-in session, so 'add another account' would return the same one.",
     "            const isolatedDivert = channel.id === 'workbuddy'",
+    "            let isolatedOk = false",
     "            if (isolatedDivert) {",
     "              try {",
     "                await post('/channels/login/isolated', { url, googleAccountChooser: chooseGoogle })",
     "                opened = true",
+    "                isolatedOk = true",
     "              } catch { /* fall through to the normal opener */ }",
     "            }",
+    "            if (!isolatedOk) {",
+    "              try {",
+    "                if (attempt.popup && !attempt.popup.closed) {",
+    "                  attempt.popup.location.replace(url)",
+    "                  opened = true",
+    "                  attempt.popup = null",
+    "                }",
+    "              } catch { /* the host can open it instead */ }",
+    "              closeLoginPopup(attempt.popup); attempt.popup = null",
+    "              if (!opened) {",
+    "                try { opened = (await post('/open-external', { url }, 15_000))?.opened === true } catch { /* manual link remains available */ }",
+    "              }",
+    "            } else {",
+    "              closeLoginPopup(attempt.popup); attempt.popup = null",
+    "            }",
+    "",
   ].join('\n'));
+
+// 1d-2. 移除舊版殘留的「提前導航一般 popup」區塊。
+// 舊補丁在 isolated 分流之前就把 popup 導向 /login，抵銷了整個隔離設計。
+const EARLY_NAV = [
+  "            let opened = false",
+  "            try {",
+  "              if (attempt.popup && !attempt.popup.closed) {",
+  "                attempt.popup.location.replace(url)",
+  "                opened = true",
+  "                attempt.popup = null",
+  "              }",
+  "            } catch { /* the host can open it instead */ }",
+  "            closeLoginPopup(attempt.popup); attempt.popup = null",
+  "            if (!opened) {",
+  "              try { opened = (await post('/open-external', { url }, 15_000))?.opened === true } catch { /* manual link remains available */ }",
+  "            }",
+].join('\n');
+if (c.includes(EARLY_NAV)) {
+  act('client.js: 移除 isolated 之前的提前 popup 導航');
+  c = c.replace(EARLY_NAV, '            let opened = false');
+}
+
+// 1d-3. setLogin 補上 isolated 欄位：modal 的「重新開啟」按鈕靠它決定走哪條分支。
+const SETLOGIN_OLD = "          setLogin({ accountId, url: typeof url === 'string' ? url : '', startedAt: Date.now() })";
+const SETLOGIN_NEW = "          setLogin({ accountId, url: typeof url === 'string' ? url : '', startedAt: Date.now(), chooseGoogle, isolated: isolatedDivert })";
+if (c.includes('isolated: isolatedDivert')) {
+  skip('client.js: login.isolated 欄位');
+} else if (c.includes(SETLOGIN_OLD)) {
+  act('client.js: login.isolated 欄位');
+  c = c.replace(SETLOGIN_OLD, SETLOGIN_NEW);
+} else {
+  problems.push('client.js: setLogin 錨點不符');
+}
 
 // 1e. WorkBuddy "add another Google account" button
 const ADD_ANCHOR = "          h('button', { type: 'button', className: 'ofm_btn', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'add' ? 'true' : undefined, onClick: startLogin }, busy === 'add' ? '\u2026' : t('chan.act.add')),\n";
