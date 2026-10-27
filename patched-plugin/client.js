@@ -4472,19 +4472,42 @@ function hideAds() {
               try { opened = (await post('/open-external', { url }, 15_000))?.opened === true } catch { /* manual link remains available */ }
             }
 
-            // WorkBuddy: hand the URL to the host's isolated Edge window instead.
+            // WorkBuddy 走宿主的獨立 Edge 視窗（乾淨 profile，才能真正選到「其他帳號」）。
+            // 必須先於一般 popup 導航執行：舊實作先讓 popup 跳 /login，WorkBuddy 會用
+            // 瀏覽器既有的登入態直接回跳，於是「新增其他 Google 帳號」永遠回到已登入的
+            // 帳號，隔離視窗根本不會被打開（實測 2026-10-22：profile 目錄自 10/12 起沒再新增）。
             const isolatedDivert = channel.id === 'workbuddy'
+            let isolatedOk = false
             if (isolatedDivert) {
               try {
                 await post('/channels/login/isolated', { url, googleAccountChooser: chooseGoogle })
                 opened = true
-              } catch { /* fall through to the normal opener */ }
-            }            if (!current()) { attempt.cancelled = true; return }
+                isolatedOk = true
+              } catch { /* 宿主不支援時退回一般開啟方式 */ }
+            }
+            if (!isolatedOk) {
+              try {
+                if (attempt.popup && !attempt.popup.closed) {
+                  attempt.popup.location.replace(url)
+                  opened = true
+                  attempt.popup = null
+                }
+              } catch { /* the host can open it instead */ }
+              closeLoginPopup(attempt.popup); attempt.popup = null
+              if (!opened) {
+                try { opened = (await post('/open-external', { url }, 15_000))?.opened === true } catch { /* manual link remains available */ }
+              }
+            } else {
+              closeLoginPopup(attempt.popup); attempt.popup = null
+            }
+            if (!current()) { attempt.cancelled = true; return }
             if (!opened) {
               try { window.open(url, '_blank', 'noopener') } catch { /* the modal offers the link too */ }
             }
           } else { closeLoginPopup(attempt.popup); attempt.popup = null }
-          setLogin({ accountId, url: typeof url === 'string' ? url : '', startedAt: Date.now() })
+          // chooseGoogle 必須一併記下：modal 的「重新開啟」按鈕會拿它重送，
+          // 漏記會讓隔離視窗退化成一般登入頁（等同舊缺陷）。
+          setLogin({ accountId, url: typeof url === 'string' ? url : '', startedAt: Date.now(), chooseGoogle, isolated: isolatedDivert })
           setOpen('accounts')
         } catch (error) {
           closeLoginPopup(attempt.popup)

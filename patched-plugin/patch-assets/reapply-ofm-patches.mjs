@@ -231,6 +231,20 @@ if (!i.includes("routePath === '/channels/login/isolated'")) {
   }
 } else { skip('index.js: /channels/login/isolated route'); }
 
+// ─── 2b. 修復舊版遺留的錯誤嵌套 ──────────────────────────────
+// 舊補丁把 isolated 路由插進了 /summary 的 if 區塊內部：
+//   if (GET /summary) {  if (POST /channels/login/isolated) {...}  return buildSummary }
+// 外層要求 GET、內層要求 POST → POST 永遠進不來。偵測到就重排。
+const NEST_BAD = /if \(method === 'GET' && routePath === '\/summary'\) \{\n([ \t]*)if \(method === 'POST' && routePath === '\/channels\/login\/isolated'\) \{[\s\S]*?\n\1\}\n([ \t]*)return send\(200, buildSummary\(deps\)\)/;
+if (NEST_BAD.test(i)) {
+  act('index.js: 修復 isolated 路由錯誤嵌套');
+  i = i.replace(NEST_BAD, function (m, ind1, ind2) {
+    const isoM = m.match(/if \(method === 'POST' && routePath === '\/channels\/login\/isolated'\) \{[\s\S]*?\n[ \t]*\}/);
+    const iso = isoM ? isoM[0] : '';
+    return "if (method === 'GET' && routePath === '/summary') {\n" + ind2 + "return send(200, buildSummary(deps))\n" + ind1 + "}\n" + iso;
+  });
+}
+
 // ─── 3. pack.js: parse VALIDATION_REQUIRED + carry it into `extra` ──────
 let p = fs.readFileSync(packPath, 'utf8');
 const BAL_FROM = [
@@ -408,6 +422,113 @@ c = c.replace(/('patch\.status\.hint': ')([^'\n]*)(')/g, (_, a, text, b) => a + 
 i = swap(i, 'index.js: reload health gate', 'assertReloadSafe(PKG_DIR)',
   '    const result = await selfReload(ctx, { logger, packageUrl: PKG_URL.href, entryUrl: ENTRY_URL })',
   "    const localReloadSafety = await import((await import('node:url')).pathToFileURL(path.join(resolveDshHome(), 'our-free-model/patch-assets/update-safety.mjs')).href)\n    localReloadSafety.assertReloadSafe(PKG_DIR)\n    const result = await selfReload(ctx, { logger, packageUrl: PKG_URL.href, entryUrl: ENTRY_URL })");
+
+// ─── 6. 擴充 Gemini 模型清單（3.8 Flash 各檔位 + 2.5 Flash 系列）────────
+// 上游只註冊 gemini-3.8-flash 一個模型；這裡補上實測可用的其他模型。
+// 2026-04 起 Google 移除 Pro 系列免費層，故 2.5 Pro 標注為「容量常滿」。
+const FALLBACK_OLD = `var GEMINI_FALLBACK_MODELS = [
+  {
+    id: GEMINI_UPSTREAM_FLASH,
+    name: "Gemini 3.8 Flash",
+    contextWindow: GEMINI_CONTEXT_WINDOW,
+    maxTokens: GEMINI.maxOutputTokens,
+    supportsImage: true,
+    effortOptions: GEMINI_EFFORT_IDS,
+    defaultEffort: GEMINI_DEFAULT_EFFORT
+  }
+];`;
+
+const FALLBACK_NEW = `var GEMINI_FALLBACK_MODELS = [
+  {
+    id: GEMINI_UPSTREAM_FLASH,
+    name: "Gemini 3.8 Flash",
+    contextWindow: GEMINI_CONTEXT_WINDOW,
+    maxTokens: GEMINI.maxOutputTokens,
+    supportsImage: true,
+    effortOptions: GEMINI_EFFORT_IDS,
+    defaultEffort: GEMINI_DEFAULT_EFFORT
+  },
+  {
+    id: "gemini-2.5-flash",
+    name: "Gemini 2.5 Flash",
+    contextWindow: GEMINI_CONTEXT_WINDOW,
+    maxTokens: GEMINI.maxOutputTokens,
+    supportsImage: true,
+    effortOptions: [],
+    defaultEffort: void 0
+  },
+  {
+    id: "gemini-2.5-flash-lite",
+    name: "Gemini 2.5 Flash Lite",
+    contextWindow: GEMINI_CONTEXT_WINDOW,
+    maxTokens: GEMINI.maxOutputTokens,
+    supportsImage: true,
+    effortOptions: [],
+    defaultEffort: void 0
+  },
+  {
+    id: "claude-sonnet-4-6",
+    name: "Claude Sonnet 4.6 (Antigravity)",
+    contextWindow: GEMINI_CONTEXT_WINDOW,
+    maxTokens: GEMINI.maxOutputTokens,
+    supportsImage: true,
+    effortOptions: [],
+    defaultEffort: void 0
+  },
+  {
+    id: "gemini-2.5-pro",
+    name: "Gemini 2.5 Pro (capacity-limited)",
+    contextWindow: GEMINI_CONTEXT_WINDOW,
+    maxTokens: GEMINI.maxOutputTokens,
+    supportsImage: true,
+    effortOptions: [],
+    defaultEffort: void 0
+  }
+];`;
+
+if (!p.includes(FALLBACK_NEW)) {
+  if (p.includes(FALLBACK_OLD)) {
+    act('pack.js: 擴充 Gemini 模型清單');
+    p = p.replace(FALLBACK_OLD, FALLBACK_NEW);
+  } else if (p.includes('gemini-2.5-flash-lite')) {
+    skip('pack.js: 擴充 Gemini 模型清單');
+  } else {
+    problems.push('pack.js: GEMINI_FALLBACK_MODELS 錨點不符');
+  }
+} else skip('pack.js: 擴充 Gemini 模型清單');
+
+// 6b. 放寬模型驗證（原本只准 GEMINI_UPSTREAM_FLASH）
+const CHECK_RE = /if \(geminiCanonicalModelId\(modelId\) !== GEMINI_UPSTREAM_FLASH\) \{[\s\S]{0,400}?\{ status: 404 \}\s*\);\s*\}/;
+if (p.includes('KNOWN_GEMINI_MODELS')) {
+  skip('pack.js: 放寬模型驗證');
+} else if (CHECK_RE.test(p)) {
+  act('pack.js: 放寬模型驗證');
+  p = p.replace(CHECK_RE, [
+    'const canonical = geminiCanonicalModelId(modelId);',
+    '  const KNOWN_GEMINI_MODELS = GEMINI_FALLBACK_MODELS.map(function (m) { return m.id; });',
+    '  if (KNOWN_GEMINI_MODELS.indexOf(canonical) < 0) {',
+    '    throw new LlmError14(',
+    '      "gemini: model not in provider catalog: " + modelId,',
+    '      "INVALID_REQUEST",',
+    '      { status: 404 }',
+    '    );',
+    '  }'
+  ].join('\n'));
+} else {
+  problems.push('pack.js: 模型驗證錨點不符');
+}
+
+// 6c. upstream 組裝：只有 3.8-flash 需要 tier 後綴
+const UP_NEW = '    upstream: canonical === GEMINI_UPSTREAM_FLASH ? GEMINI_UPSTREAM_FLASH + "-" + tier : canonical,';
+const UP_ALREADY = 'canonical === GEMINI_UPSTREAM_FLASH';
+if (p.includes(UP_ALREADY)) {
+  skip('pack.js: upstream 組裝');
+} else if (p.includes('upstream: `${GEMINI_UPSTREAM_FLASH}-${tier}`,')) {
+  act('pack.js: upstream 組裝');
+  p = p.replace("    upstream: " + "`" + "${GEMINI_UPSTREAM_FLASH}-${tier}" + "`" + ",", UP_NEW);
+} else {
+  problems.push('pack.js: upstream 錨點不符');
+}
 
 // ─── write ─────────────────────────────────────────────────────────────
 say('');

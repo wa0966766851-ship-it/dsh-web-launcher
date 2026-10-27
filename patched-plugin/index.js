@@ -1670,13 +1670,13 @@ export function createApiRoutes(deps) {
     })
     try {
       if (method === 'GET' && routePath === '/summary') {
+        return send(200, buildSummary(deps))
+      }
       if (method === 'POST' && routePath === '/channels/login/isolated') {
         const body = await readJson(req)
         if (typeof body?.url !== 'string') return send(400, { error: 'Sign-in URL required' })
         try { return send(200, await openIsolatedLogin(body.url, { googleAccountChooser: body.googleAccountChooser === true })) }
         catch (error) { return send(400, { error: error.message }) }
-      }
-        return send(200, buildSummary(deps))
       }
       if (method === 'GET' && routePath === '/stats') {
         return send(200, buildStats(deps.stats.get(), deps.catalog()))

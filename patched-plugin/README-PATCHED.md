@@ -11,6 +11,36 @@
 | 拒絕時自動展開帳號清單 | client.js | 偵測到需要驗證的帳號時自動展開清單，按鈕直接在畫面上 |
 | **贊助橫幅隱藏開關** | client.js | 2.5.6+ 改為嵌在免費模型/EAC 頁面頂部的 `SponsorBanner`；本補丁把它 gate 在 `localStorage['ofm.hide-ads']`（預設隱藏） |
 | 本地補丁頁面 | client.js | 新增「本地補丁」分頁：廣告開關 + 補丁狀態自檢（4 項） |
+| **Gemini 多模型擴充** | vendor/channel-pack/pack.js | 上游只註冊 `gemini-3.8-flash` 一個模型。本補丁加入 `gemini-2.5-flash`、`gemini-2.5-flash-lite`、`gemini-2.5-pro`、`claude-sonnet-4-6`（Antigravity 通道實測可用） |
+| **isolated 路由錯誤嵌套修復** | index.js | 舊補丁把 `/channels/login/isolated` 插進了 `GET /summary` 的 if 區塊內，導致 POST 永遠進不來。本補丁偵測並重排 |
+| **login.isolated 欄位補齊** | client.js | `setLogin()` 補上 `isolated: isolatedDivert`，讓彈窗的「重新開啟」按鈕走對分支 |
+
+## 已知問題與修正記錄（2026-10-28）
+
+### 已修正
+
+| 問題 | 症狀 | 修正 |
+| --- | --- | --- |
+| **isolated 路由錯誤嵌套** | 點「新增其他 Google 帳號」後，獨立 Edge 視窗不開啟；網路面板看不到 `POST /channels/login/isolated` 請求 | `index.js` 把路由移出 `GET /summary` 區塊，改為平級獨立 `if` |
+| **login.isolated 未賦值** | 登入彈窗的「開啟獨立登入視窗」按鈕走一般登入頁分支 | `setLogin()` 加入 `isolated: isolatedDivert` |
+| **登入順序錯誤** | 一般 popup 先導航到 /login，才嘗試獨立視窗，造成帳號混淆 | 改為 `isolatedOk` 旗標：獨立視窗成功就跳過一般 popup |
+
+### 驗證方式
+
+```powershell
+# 檢查 index.js 路由結構（isolated 應在 /summary 之後且平級）
+node -e "const fs=require('fs');const L=fs.readFileSync('index.js','utf8').split('
+');const s=L.findIndex(l=>l.includes("routePath === '/summary'"));const i=L.findIndex(l=>l.includes('channels/login/isolated'));console.log('summary@'+(s+1),'isolated@'+(i+1),'ok='+(i>s))"
+
+# 檢查 client.js 欄位
+node -e "const fs=require('fs');const s=fs.readFileSync('client.js','utf8');console.log('isolated 欄位:', s.includes('isolated: isolatedDivert'))"
+```
+
+### 未修正（上游限制，非本專案問題）
+
+- **Gemini Pro 系列**：Google 於 2026-04-01 將 Gemini 2.5 Pro / 3 Pro / 3.1 Pro 從免費層移除。Antigravity 通道的 `gemini-2.5-pro` 會回 503 `MODEL_CAPACITY_EXHAUSTED`，屬上游限流
+- **Claude Opus**：Antigravity 的 3p 配額雖包含 Opus，但 API 只開放 `claude-sonnet-4-6`
+- **Gemini 週配額**：免費帳號每週有上限，用盡後所有 Gemini 模型都會回 `UNSUPPORTED_LOCATION` 或空回應，需等重置（每週固定時間）
 
 ## 升級後重新套用
 
