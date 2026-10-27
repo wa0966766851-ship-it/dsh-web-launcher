@@ -26,16 +26,41 @@
 | **login.isolated 未賦值** | 登入彈窗的「開啟獨立登入視窗」按鈕走一般登入頁分支 | `setLogin()` 加入 `isolated: isolatedDivert` |
 | **登入順序錯誤** | 一般 popup 先導航到 /login，才嘗試獨立視窗，造成帳號混淆 | **移除提前導航區塊**，改為 isolated 優先、失敗才退回一般 popup |
 
-### 驗證方式
+### 驗證方式：回歸測試
+
+`patch-assets/login-flow-test.mjs` 斷言的是**順序與層級**，不是「某段字串存在」——
+後者正是這兩次 bug 能逃過自檢的原因。
 
 ```powershell
-# 檢查 index.js 路由結構（isolated 應在 /summary 之後且平級）
-node -e "const fs=require('fs');const L=fs.readFileSync('index.js','utf8').split('
-');const s=L.findIndex(l=>l.includes("routePath === '/summary'"));const i=L.findIndex(l=>l.includes('channels/login/isolated'));console.log('summary@'+(s+1),'isolated@'+(i+1),'ok='+(i>s))"
+# 對目前插件跑（27 項斷言）
+node patch-assets/login-flow-test.mjs
 
-# 檢查 client.js 欄位
-node -e "const fs=require('fs');const s=fs.readFileSync('client.js','utf8');console.log('isolated 欄位:', s.includes('isolated: isolatedDivert'))"
+# 對指定目錄
+node patch-assets/login-flow-test.mjs --pkg <插件目錄>
+
+# 反向驗證：故意餵壞資料，斷言必須失敗
+node patch-assets/login-flow-test.mjs --self-test
 ```
+
+或用 npm：
+
+```powershell
+npm run test:login        # 正向
+npm run test:login:self   # 反向
+npm run test:all          # 全部測試
+```
+
+測試涵蓋：
+
+| 檢查 | 抓的 bug |
+| --- | --- |
+| isolated 路由不在 `/summary` 大括號深度內 | bug ①：路由被埋，POST 永遠進不來 |
+| `isolatedDivert` 在第一次 `popup.location.replace` 之前 | bug ②：提前導航抵銷隔離設計 |
+| `setLogin` 帶 `isolated` 與 `chooseGoogle` | 彈窗「重新開啟」走錯分支 |
+| 補丁腳本含 `NEST_BAD` / `EARLY_NAV` | 舊安裝升級時不會被修 |
+| 模型清單含 `claude-sonnet-4-6` | 多模型補丁被上游升級蓋掉 |
+
+**實測**：對故意改壞的版本跑，精確報出 2 項失敗並指名原因；對修好的版本跑，27/27 通過。
 
 ### 未修正（上游限制，非本專案問題）
 
