@@ -227,6 +227,92 @@ if (c.includes('定義必須在 url 判斷之外')) {
   problems.push('client.js: isolatedDivert 作用域錨點不符');
 }
 
+// 1d-5. EAC 授權按鈕：舊版在 pending 存在時把按鈕 disabled，而 pending 會存進
+// sessionStorage 並跨重載存活。只要有一次授權沒完成（彈窗被攔、gateway 沒回、
+// 使用者中途關掉），之後每次點都靜默失敗 —— 使用者看到的就是「按鈕沒反應」。
+// 改成：按鈕永遠可點，殘留 pending 先作廢再重新發起。
+const LOGIN_OLD = [
+  "      const login = async () => {",
+  "        if (starting.current || cancelling.current || pendingRef.current !== null) return",
+  "        starting.current = true",
+].join('\n');
+const LOGIN_NEW = [
+  "      const login = async () => {",
+  "        if (starting.current || cancelling.current) return",
+  "        // 殘留的 pending 會讓按鈕看起來壞掉：先作廢它再重新發起。",
+  "        if (pendingRef.current !== null) {",
+  "          const stale = pendingRef.current",
+  "          updatePending(null)",
+  "          try { await post(`/eac/login/cancel?link=${encodeURIComponent(stale.link)}`) } catch { /* 作廢失敗不阻擋重新發起 */ }",
+  "          if (pendingRef.current !== null) return",
+  "        }",
+  "        starting.current = true",
+].join('\n');
+if (c.includes('殘留的 pending 會讓按鈕看起來壞掉')) {
+  skip('client.js: EAC 按鈕可重試');
+} else if (c.includes(LOGIN_OLD)) {
+  act('client.js: EAC 按鈕可重試');
+  c = c.replace(LOGIN_OLD, LOGIN_NEW);
+} else {
+  problems.push('client.js: EAC login 錨點不符');
+}
+
+// 按鈕解除 disabled
+const BTN_OLD = "            h(Button, { kind: 'primary', disabled: busy || pending !== null, onClick: login }, busy ? t('eac.starting') : t('eac.login')),";
+const BTN_NEW = "            h(Button, { kind: 'primary', disabled: busy, onClick: login }, busy ? t('eac.starting') : pending !== null ? t('eac.retry') : t('eac.login')),";
+if (c.includes(BTN_NEW)) {
+  skip('client.js: EAC 主按鈕解除禁用');
+} else if (c.includes(BTN_OLD)) {
+  act('client.js: EAC 主按鈕解除禁用');
+  c = c.replace(BTN_OLD, BTN_NEW);
+} else {
+  problems.push('client.js: EAC 主按鈕錨點不符');
+}
+
+// 模型卡按鈕
+const BTN2_OLD = [
+  "              h(Button, { kind: 'primary', disabled: eacLogin.busy || eacLogin.pending !== null, onClick: eacLogin.login },",
+  "                eacLogin.busy ? t('eac.starting') : t('eac.login'))))",
+].join('\n');
+const BTN2_NEW = [
+  "              h(Button, { kind: 'primary', disabled: eacLogin.busy, onClick: eacLogin.login },",
+  "                eacLogin.busy ? t('eac.starting') : eacLogin.pending !== null ? t('eac.retry') : t('eac.login'))))",
+].join('\n');
+if (c.includes("disabled: eacLogin.busy, onClick: eacLogin.login")) {
+  skip('client.js: EAC 模型卡按鈕解除禁用');
+} else if (c.includes(BTN2_OLD)) {
+  act('client.js: EAC 模型卡按鈕解除禁用');
+  c = c.replace(BTN2_OLD, BTN2_NEW);
+} else {
+  problems.push('client.js: EAC 模型卡按鈕錨點不符');
+}
+
+// 文案
+// 第三處：頁首的登入入口（撞到「沒授權」時第一眼看到的位置）
+const BTN3_OLD = [
+  "                  ? h(Button, { kind: 'primary', disabled: eacLogin.busy || eacLogin.pending !== null, onClick: eacLogin.login },",
+  "                    eacLogin.busy ? t('eac.starting') : t('eac.login'))",
+].join('\n');
+const BTN3_NEW = [
+  "                  ? h(Button, { kind: 'primary', disabled: eacLogin.busy, onClick: eacLogin.login },",
+  "                    eacLogin.busy ? t('eac.starting') : eacLogin.pending !== null ? t('eac.retry') : t('eac.login'))",
+].join('\n');
+if (c.includes("? h(Button, { kind: 'primary', disabled: eacLogin.busy, onClick: eacLogin.login },")) {
+  skip('client.js: EAC 頁首按鈕解除禁用');
+} else if (c.includes(BTN3_OLD)) {
+  act('client.js: EAC 頁首按鈕解除禁用');
+  c = c.replace(BTN3_OLD, BTN3_NEW);
+} else {
+  problems.push('client.js: EAC 頁首按鈕錨點不符');
+}
+
+c = after(c, 'client.js: eac.retry zh', "'eac.retry': '重新发起授权'",
+  "        'eac.login': '使用 GitHub 登录',\n",
+  "        'eac.retry': '重新发起授权',\n");
+c = after(c, 'client.js: eac.retry en', "'eac.retry': 'Restart authorization'",
+  "        'eac.login': 'Sign in with GitHub',\n",
+  "        'eac.retry': 'Restart authorization',\n");
+
 // 1e. WorkBuddy "add another Google account" button
 const ADD_ANCHOR = "          h('button', { type: 'button', className: 'ofm_btn', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'add' ? 'true' : undefined, onClick: startLogin }, busy === 'add' ? '\u2026' : t('chan.act.add')),\n";
 const OTHER_BTN = "          channel.id === 'workbuddy' ? h('button', { type: 'button', className: 'ofm_btn', disabled: busy !== '' || !rpc, onClick: () => startLogin(true) }, t('chan.login.other')) : null,\n";

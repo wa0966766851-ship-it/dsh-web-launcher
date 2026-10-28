@@ -129,6 +129,7 @@ function hideAds() {
         'eac.pillUnverified': '网关暂不可达',
         'eac.intro': 'EAC 渠道的对话在服务器侧校验授权：用 GitHub 登录，并给 {repo} 点一个 Star，即可解锁。登录在浏览器里完成，无需复制粘贴；取消 Star 后授权会自动失效。',
         'eac.login': '使用 GitHub 登录',
+        'eac.retry': '重新发起授权',
         'eac.starting': '正在打开浏览器…',
         'eac.waiting': '已打开浏览器授权页；若没有自动打开，请手动访问下面的地址完成授权。完成后本页会自动确认。',
         'eac.copy': '复制链接',
@@ -870,6 +871,7 @@ function hideAds() {
         'eac.pillUnverified': 'gateway unreachable',
         'eac.intro': 'EAC turns are checked server-side: sign in with GitHub and star {repo} to unlock them. The browser does the work — nothing to paste — and removing the star revokes access automatically.',
         'eac.login': 'Sign in with GitHub',
+        'eac.retry': 'Restart authorization',
         'eac.starting': 'Opening the browser…',
         'eac.waiting': 'The authorization page is open; if the browser did not come up, visit the address below to finish. This page confirms automatically.',
         'eac.copy': 'Copy link',
@@ -2960,8 +2962,8 @@ function hideAds() {
           ? h(Fragment, null,
             h('p', { className: 'ofm_note' }, t('eac.lockedNote')),
             eacLogin === undefined ? null : h('div', { className: 'ofm_row' },
-              h(Button, { kind: 'primary', disabled: eacLogin.busy || eacLogin.pending !== null, onClick: eacLogin.login },
-                eacLogin.busy ? t('eac.starting') : t('eac.login'))))
+              h(Button, { kind: 'primary', disabled: eacLogin.busy, onClick: eacLogin.login },
+                eacLogin.busy ? t('eac.starting') : eacLogin.pending !== null ? t('eac.retry') : t('eac.login'))))
           : null,
         listed ? h('p', { className: 'ofm_note' }, t('hint.listed'))
           : manual && m.availability !== 'available' ? h('p', { className: 'ofm_note' }, m.detail || t(stateKey))
@@ -3265,7 +3267,17 @@ function hideAds() {
         } finally { cancelling.current = false; setBusy(false) }
       }
       const login = async () => {
-        if (starting.current || cancelling.current || pendingRef.current !== null) return
+        if (starting.current || cancelling.current) return
+        // 舊版在這裡對 pendingRef.current !== null 直接 return，按鈕因此「點了沒反應」。
+        // pending 會存進 sessionStorage 並跨頁面重載，所以只要有一次授權沒完成
+        // （彈窗被攔、gateway 沒回、使用者中途關掉），之後每次點都會靜默失敗，
+        // 看起來就是按鈕壞了。改成：有殘留 pending 就先作廢它再重新發起。
+        if (pendingRef.current !== null) {
+          const stale = pendingRef.current
+          updatePending(null)
+          try { await post(`/eac/login/cancel?link=${encodeURIComponent(stale.link)}`) } catch { /* 作廢失敗不阻擋重新發起 */ }
+          if (pendingRef.current !== null) return
+        }
         starting.current = true
         const current = ++attempt.current
         setBusy(true); setNotice('')
@@ -3310,7 +3322,7 @@ function hideAds() {
             h(Button, { disabled: busy, onClick: refresh }, t('eac.recheck')),
             h(Button, { disabled: busy, onClick: logout }, t('eac.logout')))
           : h('div', { className: 'ofm_row' },
-            h(Button, { kind: 'primary', disabled: busy || pending !== null, onClick: login }, busy ? t('eac.starting') : t('eac.login')),
+            h(Button, { kind: 'primary', disabled: busy, onClick: login }, busy ? t('eac.starting') : pending !== null ? t('eac.retry') : t('eac.login')),
             h(StarButton, { t, repo })),
         pending !== null
           ? h('div', { className: 'ofm_callout' },
@@ -6550,8 +6562,8 @@ function hideAds() {
                 // 未授权时把登录入口放到页头：撞到「没授权」的用户第一眼看到的
                 // 位置就该有钥匙，而不是要先找到下方的授权区。
                 eacAuth?.available === true && eacAuth?.authorized !== true
-                  ? h(Button, { kind: 'primary', disabled: eacLogin.busy || eacLogin.pending !== null, onClick: eacLogin.login },
-                    eacLogin.busy ? t('eac.starting') : t('eac.login'))
+                  ? h(Button, { kind: 'primary', disabled: eacLogin.busy, onClick: eacLogin.login },
+                    eacLogin.busy ? t('eac.starting') : eacLogin.pending !== null ? t('eac.retry') : t('eac.login'))
                   : null,
                 h(StarButton, { t })),
               reading === null ? null : h(Fragment, null,

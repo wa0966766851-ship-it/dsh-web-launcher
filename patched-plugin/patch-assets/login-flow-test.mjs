@@ -249,6 +249,43 @@ if (packSrc === null) {
     packSrc.includes('KNOWN_GEMINI_MODELS') ? '' : '只有 3.8-flash 能用');
 }
 
+/* ── 6. EAC 授權按鈕必須可重試（不能被殘留 pending 卡死）── */
+
+console.log('');
+console.log('[6] client.js — EAC 授權按鈕可重試');
+
+// 舊版的 login() 對 pendingRef.current !== null 直接 return，按鈕又設了
+// disabled: pending !== null，於是殘留 pending 會讓按鈕完全失效。
+const loginFnIdx = firstLine(C, 'const login = async () =>');
+if (loginFnIdx >= 0) {
+  const fnWindow = C.slice(loginFnIdx, loginFnIdx + 14).join('\n');
+  const silentReturn = /if \(starting\.current \|\| cancelling\.current \|\| pendingRef\.current !== null\) return/.test(fnWindow);
+  check('login() 不因殘留 pending 靜默返回', !silentReturn,
+    silentReturn ? '舊寫法：pending 卡住時點擊無反應' : '');
+  check('login() 會先作廢殘留 pending',
+    fnWindow.includes('updatePending(null)') && fnWindow.includes('eac/login/cancel'));
+} else {
+  check('找到 login() 定義', false);
+}
+
+// 按鈕不得因 pending 而 disabled
+check('主按鈕不因 pending 而禁用',
+  !clientSrc.includes("disabled: busy || pending !== null"),
+  clientSrc.includes("disabled: busy || pending !== null") ? '按鈕會被卡死' : '');
+check('模型卡按鈕不因 pending 而禁用',
+  !clientSrc.includes("disabled: eacLogin.busy || eacLogin.pending !== null"),
+  clientSrc.includes("disabled: eacLogin.busy || eacLogin.pending !== null") ? '按鈕會被卡死' : '');
+
+// 重試文案存在
+check('有 eac.retry 文案', clientSrc.includes("'eac.retry'"));
+
+// 補丁腳本必須能修舊安裝
+if (patchSrc !== null) {
+  check('補丁含 EAC 按鈕修復',
+    patchSrc.includes('EAC 按鈕可重試'),
+    patchSrc.includes('EAC 按鈕可重試') ? '' : '舊安裝升級後按鈕仍會卡');
+}
+
 /* ── self-test：故意破壞輸入，斷言必須失敗 ───────────────────────────── */
 
 if (SELF_TEST) {
