@@ -290,6 +290,40 @@ if (patchSrc !== null) {
     patchSrc.includes('EAC 按鈕可重試') ? '' : '舊安裝升級後按鈕仍會卡');
 }
 
+/* ── 7. 獨立登入：每次全新 profile、不自組 OAuth ── */
+
+console.log('');
+console.log('[7] isolated-login.js — 必定未登入且不改寫登入網址');
+
+if (isoSrc === null) {
+  check('isolated-login.js 存在', false);
+} else {
+  // 關鍵 1：不得自組 OIDC 授權網址（會被 WorkBuddy 判為帳號受限）。
+  // 只看「程式碼行」，忽略註解 —— 註解裡會提到這些字串解釋歷史。
+  const codeOnly = isoSrc.split('\n')
+    .filter(function (l) { const t = l.trim(); return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*'); })
+    .join('\n');
+  const hasOidc = codeOnly.includes('protocol/openid-connect/auth') || codeOnly.includes('kc_idp_hint');
+  check('不自組 OIDC 授權網址', !hasOidc,
+    hasOidc ? '自組 OAuth 會被判「帳號訪問受限」' : '');
+  check('不使用 prompt=select_account 硬塞參數',
+    !isoSrc.includes("prompt: 'select_account'"));
+
+  // 關鍵 2：每次用新的 user-data-dir（保證無登入態）
+  check('每次以 randomUUID 建立 profile',
+    isoSrc.includes('crypto.randomUUID()'),
+    isoSrc.includes('crypto.randomUUID()') ? '' : '沿用舊 profile 會自動登入既有帳號');
+
+  // 關鍵 3：直接把原始 URL 傳給 Edge，不重組
+  check('目標網址直接取用傳入的 url', isoSrc.includes('url.toString()'));
+
+  // 關鍵 4：仍保留網域白名單（避免被當成任意 URL 開啟器）
+  check('保留 workbuddy.ai 網域白名單', isoSrc.includes('ALLOWED_ORIGIN') || isoSrc.includes('https://www.workbuddy.ai'));
+
+  // 關鍵 5：有清理機制，避免 profile 無限累積
+  check('有 pruneIsolatedProfiles 清理函式', isoSrc.includes('pruneIsolatedProfiles'));
+}
+
 /* ── self-test：故意破壞輸入，斷言必須失敗 ───────────────────────────── */
 
 if (SELF_TEST) {
