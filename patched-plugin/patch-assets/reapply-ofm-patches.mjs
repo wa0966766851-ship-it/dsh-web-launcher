@@ -25,6 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { repairNestedIsolatedRoute } from './route-repair.mjs';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { acquirePatchLock } from './update-safety.mjs';
@@ -248,7 +249,9 @@ const LOGIN_NEW = [
   "        }",
   "        starting.current = true",
 ].join('\n');
-if (c.includes('殘留的 pending 會讓按鈕看起來壞掉')) {
+// 已打過補丁的兩種寫法都算（早期版註解是「舊版在這裡對 pendingRef」，後來改成「殘留的 pending」）
+const EAC_ALREADY = c.includes('殘留的 pending 會讓按鈕看起來壞掉') || c.includes('舊版在這裡對 pendingRef');
+if (EAC_ALREADY) {
   skip('client.js: EAC 按鈕可重試');
 } else if (c.includes(LOGIN_OLD)) {
   act('client.js: EAC 按鈕可重試');
@@ -402,14 +405,27 @@ if (!i.includes("routePath === '/channels/login/isolated'")) {
 // 舊補丁把 isolated 路由插進了 /summary 的 if 區塊內部：
 //   if (GET /summary) {  if (POST /channels/login/isolated) {...}  return buildSummary }
 // 外層要求 GET、內層要求 POST → POST 永遠進不來。偵測到就重排。
-const NEST_BAD = /if \(method === 'GET' && routePath === '\/summary'\) \{\n([ \t]*)if \(method === 'POST' && routePath === '\/channels\/login\/isolated'\) \{[\s\S]*?\n\1\}\n([ \t]*)return send\(200, buildSummary\(deps\)\)/;
-if (NEST_BAD.test(i)) {
-  act('index.js: 修復 isolated 路由錯誤嵌套');
-  i = i.replace(NEST_BAD, function (m, ind1, ind2) {
-    const isoM = m.match(/if \(method === 'POST' && routePath === '\/channels\/login\/isolated'\) \{[\s\S]*?\n[ \t]*\}/);
-    const iso = isoM ? isoM[0] : '';
-    return "if (method === 'GET' && routePath === '/summary') {\n" + ind2 + "return send(200, buildSummary(deps))\n" + ind1 + "}\n" + iso;
-  });
+// 修復舊版遺留的錯誤嵌套：isolated 路由被插進 /summary 的 if 區塊內。
+// 舊補丁產生的形狀（注意 isolated 那行沒有縮排、且 /summary 少一個閉合）：
+//   if (GET /summary) {
+//   if (POST /channels/login/isolated) { ... }
+//     return buildSummary
+//   }
+// 這種程式碼語法不合法（多一個 }），直接寫入會讓 index.js 無法載入。
+//
+// ⚠️ 這裡刻意用「逐行掃描」而不是一條大正則：早先的正則把 isolated 區塊抽出來時
+// 沒有保留原本的縮排，結果吐出 `if (...) {` 貼在第 0 欄，同時外層的 } 也沒被吃掉，
+// 產生 "Missing catch or finally after try"（實測 2026-10-28）。
+if (repairNestedIsolatedRoute === null) {
+  problems.push('index.js: 修復模組未載入');
+} else {
+  const nestRepaired = repairNestedIsolatedRoute(i);
+  if (nestRepaired !== null) {
+    act('index.js: 修復 isolated 路由錯誤嵌套');
+    i = nestRepaired;
+  } else if (i.indexOf("routePath === '/channels/login/isolated'") >= 0) {
+    skip('index.js: isolated 路由位置正確');
+  }
 }
 
 // ─── 3. pack.js: parse VALIDATION_REQUIRED + carry it into `extra` ──────

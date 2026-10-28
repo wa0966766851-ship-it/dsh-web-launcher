@@ -214,8 +214,12 @@ if (patchSrc === null) {
   // 這種情況下第 4 組不適用 —— 跳過而不是判失敗。
   console.log('  skip 目標目錄不含 patch-assets（已安裝插件），跳過升級修復檢查');
 } else {
-  check('補丁能偵測並重排錯誤嵌套', patchSrc.includes('NEST_BAD'),
-    patchSrc.includes('NEST_BAD') ? '' : '舊安裝的壞路由不會被修');
+  check('補丁能偵測並重排錯誤嵌套',
+    patchSrc.includes('repairNestedIsolatedRoute'),
+    patchSrc.includes('repairNestedIsolatedRoute') ? '' : '舊安裝的壞路由不會被修');
+  // 修復模組本身也要存在且可載入
+  const repairSrc = read('patch-assets/route-repair.mjs');
+  check('修復模組存在', repairSrc !== null && repairSrc.includes('repairNestedIsolatedRoute'));
   check('補丁能移除提前導航', patchSrc.includes('EARLY_NAV'),
     patchSrc.includes('EARLY_NAV') ? '' : '舊安裝仍會保留提前導航');
   check('補丁會補 setLogin 欄位', patchSrc.includes('login.isolated 欄位'));
